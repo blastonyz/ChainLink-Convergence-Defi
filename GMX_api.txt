@@ -1,0 +1,120 @@
+REST
+REST endpoints for protocol information.
+
+Oracle Information
+Ping
+To check the endpoint status:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/ping
+Avalanche URL: https://avalanche-api.gmxinfra.io/ping
+Botanix URL: https://botanix-api.gmxinfra.io/ping
+Tickers
+To retrieve the latest price information for pricing display:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/prices/tickers
+Avalanche URL: https://avalanche-api.gmxinfra.io/prices/tickers
+Botanix URL: https://botanix-api.gmxinfra.io/prices/tickers
+Signed Prices
+To retrieve the latest signed price information for sending transactions:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/signed_prices/latest
+Avalanche URL: https://avalanche-api.gmxinfra.io/signed_prices/latest
+Botanix URL: https://botanix-api.gmxinfra.io/signed_prices/latest
+Candlesticks
+To retrieve candlesticks data:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/prices/candles?tokenSymbol=ETH&period=1d
+Avalanche URL: https://avalanche-api.gmxinfra.io/prices/candles?tokenSymbol=AVAX&period=1d
+Botanix URL: https://botanix-api.gmxinfra.io/prices/candles?tokenSymbol=BTC&period=1d
+Required query parameters:
+
+tokenSymbol
+period: 1m, 5m, 15m, 1h, 4h, or 1d
+Optional query parameters:
+
+limit: The maximum number of candles to return. Defaults to 1000 if not specified.
+Minimum: 1
+Maximum: 10000
+Response format:
+
+{
+  "period": "1d",
+  "candles": [
+    [1701388800, 2150.25, 2180.5, 2145.0, 2175.3],
+    [1701302400, 2120.1, 2155.0, 2110.0, 2150.25]
+  ]
+}
+
+Each candle is an array with 5 values:
+
+timestamp - Unix timestamp (seconds) of the candle period start
+open - Opening price
+high - Highest price during the period
+low - Lowest price during the period
+close - Closing price
+Candles are returned in descending order (most recent first).
+
+Tokens
+To retrieve a list of supported tokens:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/tokens
+Avalanche URL: https://avalanche-api.gmxinfra.io/tokens
+Botanix URL: https://botanix-api.gmxinfra.io/tokens
+Markets Information
+Trading Markets and GM Tokens
+To retrieve a list of tradable markets and their tokens (e.g., GM tokens for pools):
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/markets
+Avalanche URL: https://avalanche-api.gmxinfra.io/markets
+Botanix URL: https://botanix-api.gmxinfra.io/markets
+Trading Markets and GM Info
+To retrieve a list of detailed information about tradable markets and their tokens, including liquidity, open interest, token amounts, funding/borrowing/net rates, isDisabled status, and listing date:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/markets/info
+Avalanche URL: https://avalanche-api.gmxinfra.io/markets/info
+Botanix URL: https://botanix-api.gmxinfra.io/markets/info
+Fee APYs
+To retrieve GM and GLV fee APYs:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/apy?period=total
+Avalanche URL: https://avalanche-api.gmxinfra.io/apy?period=total
+Botanix URL: https://botanix-api.gmxinfra.io/apy?period=total
+Accepted query parameters:
+
+period: 1d, 7d, 30d, 90d, 180d, 1y, total. If no period is set, 30d is returned by default.
+Performance
+To retrieve GM and GLV annualized performance:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/performance/annualized?period=total
+Avalanche URL: https://avalanche-api.gmxinfra.io/performance/annualized?period=total
+Botanix URL: https://botanix-api.gmxinfra.io/performance/annualized?period=total
+Accepted query parameters:
+
+period: 7d, 30d, 90d, 180d, 1y, total. If no period is set, 90d is returned by default.
+address: The address of a specific GM or GLV if data for only one entity is required.
+GLV Tokens
+To retrieve a list of GMX Liquidity Vault (GLV) tokens:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/glvs/
+Avalanche URL: https://avalanche-api.gmxinfra.io/glvs/
+Botanix URL: https://botanix-api.gmxinfra.io/glvs/
+GLV Info
+To retrieve extended GLV information, including market exposure, balance in GMs and USD, isDisabled status, and listing date:
+
+Arbitrum URL: https://arbitrum-api.gmxinfra.io/glvs/info
+Avalanche URL: https://avalanche-api.gmxinfra.io/glvs/info
+Botanix URL: https://botanix-api.gmxinfra.io/glvs/info
+Alternative URLs
+If the primary host is unavailable, use the following fallback endpoints:
+
+Arbitrum:
+https://arbitrum-api-fallback.gmxinfra.io
+https://arbitrum-api-fallback.gmxinfra2.io
+Avalanche:
+https://avalanche-api-fallback.gmxinfra.io
+https://avalanche-api-fallback.gmxinfra2.io
+Botanix:
+https://botanix-api-fallback.gmxinfra.io
+https://botanix-api-fallback.gmxinfra2.io
+Previous
+Updates and Support

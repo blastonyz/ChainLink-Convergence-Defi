@@ -1,0 +1,32 @@
+{
+  "project": "Hackathon DeFi Integrator",
+  "lastUpdated": "2026-02-17",
+  "activeNetworks": [
+    {
+      "key": "sepolia",
+      "chainId": 11155111,
+      "file": "./sepolia.json"
+    },
+    {
+      "key": "arbitrumSepolia",
+      "chainId": 421614,
+      "file": "./arbitrum-sepolia.json"
+    }
+  ],
+  "recommendedNextTestnets": [
+    {
+      "key": "baseSepolia",
+      "chainId": 84532,
+      "why": "Buen balance entre ecosistema DeFi activo, costos bajos y soporte de tooling."
+    },
+    {
+      "key": "unichainSepolia",
+      "chainId": 1301,
+      "why": "Útil para estrategias enfocadas en Uniswap v4 y pruebas de routing experimental."
+    }
+  ],
+  "policy": {
+    "maxActiveTestnets": 4,
+    "principle": "Priorizar cobertura de protocolos con mínimo overhead operativo."
+  }
+}
