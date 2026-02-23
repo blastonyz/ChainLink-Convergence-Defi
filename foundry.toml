@@ -11,6 +11,8 @@ remappings = [
 	"v4-periphery/=lib/v4-periphery/",
 	"@uniswap/v3-core/=lib/v3-core/",
 	"@uniswap/v3-periphery/=lib/v3-periphery/",
+	"@sushiswap/sushi-v3-core/=lib/sushi-v3-core/",
+	"@sushiswap/sushi-v3-periphery/=lib/sushi-v3-periphery/",
 ]
-
+viaIR = true
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

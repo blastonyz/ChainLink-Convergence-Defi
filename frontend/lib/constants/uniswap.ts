@@ -8,8 +8,8 @@ export const UNISWAP_V3_MAINNET_TOKENS = {
 } as const;
 
 export const UNISWAP_V3_TARGET_PAIRS = [
-  ['ETH', 'USDC'],
-  ['ETH', 'DAI'],
+  ['WETH', 'USDC'],
+  ['WETH', 'DAI'],
   ['USDC', 'DAI'],
   ['ARB', 'DAI'],
   ['ARB', 'USDT'],

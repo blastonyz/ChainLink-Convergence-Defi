@@ -6,6 +6,10 @@ import AaveTokens, {
   type AaveRewardTokenRow,
   type AaveTokenRow,
 } from './AaveTokens';
+import SushiPrices, {
+  type SushiPoolRow,
+  type SushiTokenPriceRow,
+} from './SushiPrices';
 
 type CoinGeckoResponse = {
   source: 'coingecko';
@@ -55,6 +59,22 @@ type UniswapV4Response = {
   error?: string;
 };
 
+type SushiBundle = {
+  ethPriceUSD: string;
+};
+
+type SushiResponse = {
+  source: 'sushiswap-v3-pools-subgraph';
+  subgraphId: string;
+  data: {
+    bundles: SushiBundle[];
+    pools: SushiPoolRow[];
+    tokenPricesUSD: SushiTokenPriceRow[];
+  };
+  requestedAt: string;
+  error?: string;
+};
+
 type AaveResponse = {
   source: 'aave-v3-subgraph';
   subgraphId: string;
@@ -78,6 +98,7 @@ export default function PriceComparison() {
   const [bitget, setBitget] = useState<BitgetResponse | null>(null);
   const [uniswapV4, setUniswapV4] = useState<UniswapV4Response | null>(null);
   const [aave, setAave] = useState<AaveResponse | null>(null);
+  const [sushi, setSushi] = useState<SushiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +107,7 @@ export default function PriceComparison() {
     setError(null);
 
     try {
-      const [coingeckoRes, bitgetRes, uniswapV4Res, aaveRes] =
+      const [coingeckoRes, bitgetRes, uniswapV4Res, aaveRes, sushiRes] =
         await Promise.all([
         fetch(
           `/api/prices/coingecko?ids=${COINGECKO_IDS}&vs_currency=usd`,
@@ -97,20 +118,24 @@ export default function PriceComparison() {
         fetch(`/api/prices/bitget?symbols=${BITGET_SYMBOLS}`, {
           cache: 'no-store',
         }),
-        fetch('/api/prices/uniswap-v4', {
+        fetch('/api/prices/uniswap-v3', {
           cache: 'no-store',
         }),
         fetch('/api/prices/aave', {
           cache: 'no-store',
         }),
+        fetch('/api/prices/sushiswap-v3-pools', {
+          cache: 'no-store',
+        }),
       ]);
 
-      const [coingeckoJson, bitgetJson, uniswapV4Json, aaveJson] =
+      const [coingeckoJson, bitgetJson, uniswapV4Json, aaveJson, sushiJson] =
         await Promise.all([
           coingeckoRes.json() as Promise<CoinGeckoResponse>,
           bitgetRes.json() as Promise<BitgetResponse>,
           uniswapV4Res.json() as Promise<UniswapV4Response>,
           aaveRes.json() as Promise<AaveResponse>,
+          sushiRes.json() as Promise<SushiResponse>,
         ]);
 
       if (!coingeckoRes.ok) {
@@ -129,10 +154,15 @@ export default function PriceComparison() {
         throw new Error(aaveJson.error ?? 'Aave request failed');
       }
 
+      if (!sushiRes.ok) {
+        throw new Error(sushiJson.error ?? 'SushiSwap request failed');
+      }
+
       setCoingecko(coingeckoJson);
       setBitget(bitgetJson);
       setUniswapV4(uniswapV4Json);
       setAave(aaveJson);
+      setSushi(sushiJson);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch prices');
     } finally {
@@ -206,6 +236,18 @@ export default function PriceComparison() {
       };
     });
   }, [uniswapV4]);
+
+  const sushiPools = useMemo<SushiPoolRow[]>(() => {
+    return sushi?.data.pools ?? [];
+  }, [sushi]);
+
+  const sushiEthPrice = useMemo<string | null>(() => {
+    return sushi?.data.bundles[0]?.ethPriceUSD ?? null;
+  }, [sushi]);
+
+  const sushiTokenPrices = useMemo<SushiTokenPriceRow[]>(() => {
+    return sushi?.data.tokenPricesUSD ?? [];
+  }, [sushi]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') return;
@@ -286,6 +328,11 @@ export default function PriceComparison() {
           </div>
 
           <UniswapPrices rows={uniswapRows} />
+          <SushiPrices
+            pools={sushiPools}
+            ethPriceUsd={sushiEthPrice}
+            tokenPrices={sushiTokenPrices}
+          />
           <AaveTokens
             tokens={aave?.tokens ?? []}
             rewardTokens={aave?.rewardTokens ?? []}
