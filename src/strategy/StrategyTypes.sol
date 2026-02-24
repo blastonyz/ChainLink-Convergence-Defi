@@ -5,8 +5,7 @@ import {IPermit2} from "./interfaces/IPermit2.sol";
 
 enum OperationType {
 	Arbitrage,
-	Position,
-	Trading
+	Position
 }
 
 struct Action {

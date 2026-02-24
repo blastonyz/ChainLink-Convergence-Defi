@@ -1,53 +1,97 @@
-# Typescript Simple Workflow Example
+# CRE Multi-Chain Strategy Workflow
 
-This template provides a simple Typescript workflow example. It shows how to create a simple "Hello World" workflow using Typescript.
+This workflow does the following in one CRE flow:
 
-Steps to run the example
+1. Fetches historical OHLC candles from CoinGecko.
+2. Sends market context to Gemini.
+3. Returns strategy recommendations for:
+   - Mainnet -> long-term positioning for Aave + Uniswap (`StrategyExecutor`).
+   - Arbitrum -> active trading for GMX (`GMXExecutor`).
 
-## 1. Update .env file
+It supports two HTTP triggers:
 
-You need to add a private key to env file. This is specifically required if you want to simulate chain writes. For that to work the key should be valid and funded.
-If your workflow does not do any chain write then you can just put any dummy key as a private key. e.g.
+- `position` trigger (Aave/Uniswap recommendation route).
+- `trading` trigger (GMX route with typed action controls).
 
-```
-CRE_ETH_PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001
-```
+## Required secrets
 
-Note: Make sure your `workflow.yaml` file is pointing to the config.json, example:
+Configure these secrets for simulation/deployment:
 
-```yaml
-staging-settings:
-  user-workflow:
-    workflow-name: "hello-world"
-  workflow-artifacts:
-    workflow-path: "./main.ts"
-    config-path: "./config.json"
-```
+- `COINGECKO_API_KEY`
+- `GEMINI_API_KEY`
 
-## 2. Install dependencies
+Config files already reference these IDs:
 
-If `bun` is not already installed, see https://bun.com/docs/installation for installing in your environment.
+- `config.staging.json`
+- `config.production.json`
 
-```bash
-cd <workflow-name> && bun install
-```
+## HTTP trigger auth
 
-Example: For a workflow directory named `hello-world` the command would be:
+Set your authorized EVM public key in `httpAuthorizedKeys` in config files (replace the placeholder `0x000...000`).
 
-```bash
-cd hello-world && bun install
-```
+## Run locally
 
-## 3. Simulate the workflow
-
-Run the command from <b>project root directory</b>
+From `my-workflow`:
 
 ```bash
-cre workflow simulate <path-to-workflow-directory> --target=staging-settings
+bun install
 ```
 
-Example: For workflow named `hello-world` the command would be:
+From project root (`Convergence`):
 
+**Simulation mode (no on-chain execution, zero txHash):**
 ```bash
-cre workflow simulate ./hello-world --target=staging-settings
+make workflow-simulate
 ```
+
+**Broadcast mode (actual on-chain execution, real txHash):**
+```bash
+make workflow-simulate-broadcast
+```
+
+Or run directly:
+```bash
+# Simulates without executing transactions
+cre workflow simulate ./my-workflow -T staging-settings -e .env -v
+
+# Simulates AND executes transactions on-chain
+cre workflow simulate ./my-workflow -T staging-settings -e .env -v --broadcast
+```
+
+### Key Difference
+
+| Mode | Transactions | txHash | Use Case |
+|------|---|---|---|
+| `simulate` | Never executed | `0x000...000` | Development/testing |
+| `simulate --broadcast` | Executed on-chain | Real hash | Testing with real transactions |
+| `deploy` | Deployed to CRE | Real hash | Production |
+
+The `--broadcast` flag is what enables **actual blockchain execution during simulation**. Without it, you get zero txHash.
+
+## Optional HTTP payload
+
+When using the `position` trigger, you can send:
+
+```json
+{
+  "reason": "manual-check-before-open"
+}
+```
+
+When using the `trading` trigger, you can send:
+
+```json
+{
+  "reason": "manual-short-check",
+  "action": "short",
+  "minConfidence": 55
+}
+```
+
+`action` is strictly validated and must be one of: `auto | long | short | close`.
+
+## Execution toggle
+
+- `enableExecution: true` enables `runtime.report + writeReport` for GMX recommendations.
+- `defaultTradingMinConfidence` sets the default confidence threshold if `minConfidence` is not provided.
+- `gmxExecution.chainSelectorName` and `gmxExecution.gasLimit` control EVM write target settings.

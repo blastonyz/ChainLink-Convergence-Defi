@@ -39,9 +39,11 @@ contract TradingFlowGMX is Script {
 		if (orderVault == address(0)) revert MissingOrderVault();
 		address market = vm.envOr("GMX_MARKET", GMXFocusAddresses.ARBITRUM_GM_TOKEN_ETH_WETH_USDC);
 		if (market == address(0)) revert MissingMarket();
-		address receiver = vm.envOr("GMX_RECEIVER", address(0));
+		// For manual testing: use the caller as receiver
+		// For CRE flows: set GMX_RECEIVER to gmxExecutor explicitly
+		address receiver = vm.envOr("GMX_RECEIVER", msg.sender);
 		if (receiver == address(0)) {
-			receiver = gmxExecutor;
+			receiver = msg.sender;
 		}
 		address cancellationReceiver = vm.envOr("GMX_CANCELLATION_RECEIVER", address(0));
 		address callbackContract = vm.envOr("GMX_CALLBACK_CONTRACT", address(0));
@@ -120,23 +122,40 @@ contract TradingFlowGMX is Script {
 		IERC20(weth).transfer(gmxExecutor, collateralAmount);
 
 		bytes32 opHash = keccak256(bytes(operation));
+		bytes32 orderKey;
 		if (opHash == keccak256("long")) {
-			IGMXExecutor(gmxExecutor).createLongOrder{value: executionFee}(request);
+			orderKey = IGMXExecutor(gmxExecutor).createLongOrder{value: executionFee}(request);
 		} else if (opHash == keccak256("short")) {
-			IGMXExecutor(gmxExecutor).createShortOrder{value: executionFee}(request);
+			orderKey = IGMXExecutor(gmxExecutor).createShortOrder{value: executionFee}(request);
 		} else if (opHash == keccak256("close")) {
-			IGMXExecutor(gmxExecutor).createCloseOrder{value: executionFee}(request);
+			orderKey = IGMXExecutor(gmxExecutor).createCloseOrder{value: executionFee}(request);
 		} else {
 			revert InvalidGmxOperation(operation);
 		}
 		vm.stopBroadcast();
 
+		bytes32 expectedPositionKey = keccak256(
+			abi.encode(gmxExecutor, market, collateralToken, isLong)
+		);
+
 		console2.log("GMX trading flow executed on", gmxExecutor);
 		console2.log("GMX operation", operation);
+		console2.log("GMX receiver", receiver);
+		console2.log("GMX order type", orderTypeName);
+		console2.log("GMX isLong", isLong);
 		console2.log("WETH token", weth);
-		console2.log("Amount in ETH", amountInEth);
+		console2.log("amountInEth", amountInEth);
+		console2.log("collateralAmount", collateralAmount);
+		console2.log("sizeDeltaUsd", sizeDeltaUsd);
 		console2.log("Market", market);
+		console2.log("receiver", receiver);
+		console2.log("acceptablePrice", acceptablePrice);
+		console2.log("triggerPrice", triggerPrice);
 		console2.log("Execution fee", executionFee);
+		console2.log("orderKey");
+		console2.logBytes32(orderKey);
+		console2.log("expectedPositionKey(account=gmxExecutor)");
+		console2.logBytes32(expectedPositionKey);
 	}
 
 	function _parseOrderType(string memory orderTypeName) internal pure returns (Order.OrderType) {

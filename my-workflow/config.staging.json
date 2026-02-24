@@ -1,3 +1,64 @@
 {
-  "schedule": "*/30 * * * * *"
+  "geminiModel": "gemini-2.0-flash",
+  "geminiApiBaseUrl": "https://generativelanguage.googleapis.com/v1beta",
+  "geminiTemperature": 0.25,
+  "geminiMaxOutputTokens": 700,
+  "coingeckoApiBaseUrl": "https://api.coingecko.com/api/v3",
+  "coingeckoApiKeyHeader": "x-cg-demo-api-key",
+  "coingeckoVsCurrency": "usd",
+  "ohlcDays": 7,
+  "coingeckoApiKeySecretId": "COINGECKO_API_KEY",
+  "geminiApiKeySecretId": "GEMINI_API_KEY",
+  "enableExecution": true,
+  "defaultTradingMinConfidence": 60,
+  "gmxExecution": {
+    "chainSelectorName": "ethereum-mainnet-arbitrum-1",
+    "gasLimit": "2500000"
+  },
+  "gmxIntent": {
+    "collateralToken": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "market": "0x70d95587d40A2caf56bd97485aB3Eec10Bee6336",
+    "slippageBps": 100
+  },
+  "chains": [
+    {
+      "chain": "mainnet",
+      "coingeckoCoinId": "ethereum",
+      "recommendationTarget": "aave-uniswap",
+      "strategyExecutorAddress": "0x37f6a860625a68b414C2D4c63840212f4271d3C0"
+    },
+    {
+      "chain": "arbitrum",
+      "coingeckoCoinId": "ethereum",
+      "recommendationTarget": "gmx",
+      "strategyExecutorAddress": "",
+      "gmxExecutorAddress": "0x2157b12B8841B22A64aF4d049F2914829C8Fdc79",
+      "gmxIntent": {
+        "collateralToken": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        "market": "0x70d95587d40A2caf56bd97485aB3Eec10Bee6336",
+        "slippageBps": 100
+      }
+    }
+  ],
+  "httpAuthorizedKeys": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ],
+  "httpAuthorizedKeysPosition": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ],
+  "httpAuthorizedKeysTrading": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ],
+  "_cre": {
+    "comment": "IMPORTANT: After deploying your CRE workflow, configure your executors with these values",
+    "forwarder": "0xd770499057619c9a76205fD4168161cf94Abc532",
+    "workflowId": "0x33317d48575741e79956a801306cdc72f9592f9e7745057a1488ccb2c4022665",
+    "workflowOwner": "0x0571235134DC15a00f02916987C2c16b5fC52E2A"
+  }
 }

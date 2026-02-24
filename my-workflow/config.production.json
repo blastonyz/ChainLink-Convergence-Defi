@@ -1,3 +1,46 @@
 {
-  "schedule": "*/30 * * * * *"
+  "geminiModel": "gemini-2.0-flash",
+  "geminiApiBaseUrl": "https://generativelanguage.googleapis.com/v1beta",
+  "coingeckoApiBaseUrl": "https://api.coingecko.com/api/v3",
+  "coingeckoApiKeyHeader": "x-cg-demo-api-key",
+  "coingeckoVsCurrency": "usd",
+  "ohlcDays": 7,
+  "coingeckoApiKeySecretId": "COINGECKO_API_KEY",
+  "geminiApiKeySecretId": "GEMINI_API_KEY",
+  "enableExecution": false,
+  "defaultTradingMinConfidence": 60,
+  "gmxExecution": {
+    "chainSelectorName": "ethereum-mainnet-arbitrum-1",
+    "gasLimit": "2500000"
+  },
+  "chains": [
+    {
+      "chain": "mainnet",
+      "coingeckoCoinId": "ethereum",
+      "recommendationTarget": "aave-uniswap",
+      "strategyExecutorAddress": "0xa1cB52f2C0e3F2366A344C35ADeAfDfD3628ba01"
+    },
+    {
+      "chain": "arbitrum",
+      "coingeckoCoinId": "ethereum",
+      "recommendationTarget": "gmx",
+      "strategyExecutorAddress": "0xdc7a67547ADDB28B8334ae9C046426Ca87B35227",
+      "gmxExecutorAddress": "0x21131aB05A31E97902e04f9dA60a2D53ADD82121"
+    }
+  ],
+  "httpAuthorizedKeys": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ],
+  "httpAuthorizedKeysPosition": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ],
+  "httpAuthorizedKeysTrading": [
+    {
+      "publicKey": "0x0000000000000000000000000000000000000000"
+    }
+  ]
 }

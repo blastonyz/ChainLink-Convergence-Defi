@@ -15,13 +15,15 @@ contract DeployGmxExecutor is Script {
 			GMXFocusAddresses.ARBITRUM_ROUTER_TOKEN_SPENDER
 		);
 		require(gmxRouterSpender != address(0), "GMX_ROUTER_SPENDER_NOT_SET");
+		address creForwarder = vm.envOr("CRE_FORWARDER", address(0));
 
 		vm.startBroadcast(privateKey);
-		deployed = new GMXExecutor(gmxRouter, gmxRouterSpender);
+		deployed = new GMXExecutor(gmxRouter, gmxRouterSpender, creForwarder);
 		vm.stopBroadcast();
 
 		console2.log("GMXExecutor deployed at", address(deployed));
 		console2.log("GMX router", gmxRouter);
 		console2.log("GMX router spender", gmxRouterSpender);
+		console2.log("CRE forwarder", creForwarder);
 	}
 }

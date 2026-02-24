@@ -21,13 +21,15 @@ contract DeployExecutor is Script {
 		require(sushiRouter != uniswapRouter, "ROUTERS_MUST_DIFFER");
 		address aavePool = vm.envOr("AAVE_POOL", AaveFocusAddresses.MAINNET_AAVE_POOL2);
 		address permit2 = vm.envOr("PERMIT2", UniswapV3FocusAddresses.PERMIT2);
+		address creForwarder = vm.envOr("CRE_FORWARDER", address(0));
 
 		vm.startBroadcast(privateKey);
 		deployed = new StrategyExecutor(
 			uniswapRouter,
 			sushiRouter,
 			aavePool,
-			permit2
+			permit2,
+			creForwarder
 		);
 		vm.stopBroadcast();
 
@@ -36,5 +38,6 @@ contract DeployExecutor is Script {
 		console2.log("Sushi router", sushiRouter);
 		console2.log("Aave pool", aavePool);
 		console2.log("Permit2", permit2);
+		console2.log("CRE forwarder", creForwarder);
 	}
 }

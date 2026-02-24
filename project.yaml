@@ -26,11 +26,15 @@
 # ==========================================================================
 staging-settings:
   rpcs:
-    - chain-name: ethereum-testnet-sepolia
-      url: https://ethereum-sepolia-rpc.publicnode.com
+    - chain-name: ethereum-mainnet
+      url: https://virtual.rpc.tenderly.co/blasaz/project/private/main/9db6114a-a209-4cbe-a28b-361e135e227d
+    - chain-name: ethereum-mainnet-arbitrum-1
+      url: https://virtual.arbitrum.eu.rpc.tenderly.co/f539072e-e52d-40e9-b2ce-3e02561d451a
 
 # ==========================================================================
 production-settings:
   rpcs:
-    - chain-name: ethereum-testnet-sepolia
-      url: https://ethereum-sepolia-rpc.publicnode.com
+    - chain-name: ethereum-mainnet
+      url: https://virtual.rpc.tenderly.co/blasaz/project/private/main/9db6114a-a209-4cbe-a28b-361e135e227d
+    - chain-name: ethereum-mainnet-arbitrum-1
+      url: https://virtual.arbitrum.eu.rpc.tenderly.co/f539072e-e52d-40e9-b2ce-3e02561d451a
