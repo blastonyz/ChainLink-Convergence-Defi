@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import {Script, console2} from "forge-std/Script.sol";
-import {UniswapV3FocusAddresses} from "../src/libraries/addresses/UniswapV3FocusAddresses.sol";
+import {ArbitrumCoreAddresses} from "../src/libraries/addresses/ArbitrumCoreAddresses.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 
 interface IPool {
@@ -33,9 +33,9 @@ interface IStrategyExecutor {
  * 3. Query final position status to confirm closure
  */
 contract ClosePositionFlow is Script {
-	address internal constant USDC = UniswapV3FocusAddresses.USDC;
-	address internal constant WETH = UniswapV3FocusAddresses.WETH;
-	address internal constant AAVE_POOL = 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
+	address internal constant USDC = ArbitrumCoreAddresses.USDC;
+	address internal constant WETH = ArbitrumCoreAddresses.WETH;
+	address internal constant AAVE_POOL = ArbitrumCoreAddresses.AAVE_V3_POOL;
 	address internal constant DEFAULT_EXECUTOR = 0x17d132281849911e52942AB19Cd7Aee239abB549;
 
 	// Aave rate mode: 2 = variable rate (stable is 1)
@@ -47,6 +47,9 @@ contract ClosePositionFlow is Script {
 	function run() external {
 		uint256 privateKey = vm.envUint("PRIVATE_KEY");
 		address executorAddress = vm.envOr("EXECUTOR", DEFAULT_EXECUTOR);
+		address usdc = vm.envOr("USDC_TOKEN", USDC);
+		address weth = vm.envOr("WETH_TOKEN", WETH);
+		address aavePool = vm.envOr("AAVE_POOL", AAVE_POOL);
 
 		if (executorAddress == address(0)) revert MissingExecutor();
 
@@ -60,7 +63,7 @@ contract ClosePositionFlow is Script {
 			,
 			,
 			uint256 healthFactor
-		) = IPool(AAVE_POOL).getUserAccountData(executorAddress);
+		) = IPool(aavePool).getUserAccountData(executorAddress);
 
 		console2.log("=== Position Status Before Close ===");
 		console2.log("Total Collateral (USD basis)", totalCollateralBase);
@@ -68,14 +71,14 @@ contract ClosePositionFlow is Script {
 		console2.log("Health Factor (8 decimals)", healthFactor);
 
 		// Get USDC balance before closing
-		uint256 usdcBalance = IERC20(USDC).balanceOf(executorAddress);
+		uint256 usdcBalance = IERC20(usdc).balanceOf(executorAddress);
 		console2.log("USDC Balance", usdcBalance);
 
 		// Step 1: Call closePosition on executor contract
 		// This handles approval, repayment, withdrawal, and WETH->ETH conversion internally
 		if (totalDebtBase > 0) {
 			console2.log("Calling closePosition on executor...");
-			IStrategyExecutor(executorAddress).closePosition(USDC, WETH, RATE_MODE);
+			IStrategyExecutor(executorAddress).closePosition(usdc, weth, RATE_MODE);
 			console2.log("Position close transaction sent");
 		} else {
 			console2.log("No debt to repay");
@@ -89,7 +92,7 @@ contract ClosePositionFlow is Script {
 			,
 			,
 			uint256 finalHealthFactor
-		) = IPool(AAVE_POOL).getUserAccountData(executorAddress);
+		) = IPool(aavePool).getUserAccountData(executorAddress);
 
 		console2.log("=== Final Position Status ===");
 		console2.log("Total Collateral (USD basis)", finalCollateral);

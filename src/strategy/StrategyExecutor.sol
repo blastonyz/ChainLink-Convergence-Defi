@@ -44,6 +44,24 @@ contract StrategyExecutor is
 	error InvalidCreWorkflowOwner(address received, address expected);
 	error InvalidCreOperation(uint8 operation);
 	error InvalidCreReportLength(uint256 length);
+	error ClosePositionDebtRemaining(uint256 totalDebtBase);
+	error InsufficientRepayAssetBalance(address asset);
+	error ClosePositionUnwindStalled(uint256 totalDebtBase);
+	error ClosePositionUnsupportedPair(address borrowAsset, address collateralAsset);
+
+	event PositionClosed(
+		address indexed borrowAsset,
+		address indexed collateralAsset,
+		uint256 repaidAmount,
+		uint256 withdrawnAmount
+	);
+	event PositionCloseSwap(
+		address indexed tokenIn,
+		address indexed tokenOut,
+		uint256 amountIn,
+		uint256 amountOut
+	);
+	event PositionCloseUnwind(uint256 iteration, uint256 debtBaseRemaining, uint256 collateralWithdrawn);
 
 	event PositionCollateralSupplied(address indexed asset, uint256 amount, address indexed onBehalfOf);
 	event PositionBorrowed(address indexed asset, uint256 amount, address indexed onBehalfOf);
@@ -276,6 +294,54 @@ contract StrategyExecutor is
 		}
 
 		emit OperationExecuted(op, msg.sender, beneficiary);
+	}
+
+	function closePosition(address borrowAsset, address collateralAsset, uint256 rateMode)
+		external
+		onlyOwner
+		returns (uint256 repaidAmount, uint256 withdrawnAmount)
+	{
+		bool isSupportedLongPair =
+			collateralAsset == ArbitrumCoreAddresses.WETH && borrowAsset == ArbitrumCoreAddresses.USDC;
+		if (!isSupportedLongPair) {
+			revert ClosePositionUnsupportedPair(borrowAsset, collateralAsset);
+		}
+
+		uint256 walletCollateralBalance = IERC20(collateralAsset).balanceOf(address(this));
+		if (walletCollateralBalance > 0) {
+			uint256 initialSwapOut = _uniswapSwapExactTokensForTokens(
+				collateralAsset,
+				borrowAsset,
+				3000,
+				walletCollateralBalance,
+				0,
+				address(this)
+			);
+			emit PositionCloseSwap(collateralAsset, borrowAsset, walletCollateralBalance, initialSwapOut);
+		}
+
+		uint256 totalRepaid;
+		uint256 repayAssetBalance = IERC20(borrowAsset).balanceOf(address(this));
+		if (repayAssetBalance > 0) {
+			IERC20(borrowAsset).approve(address(aave), repayAssetBalance);
+			totalRepaid += _aaveRepay(borrowAsset, repayAssetBalance, rateMode, address(this));
+		}
+
+		(, uint256 totalDebtBase, , , , ) = aave.getUserAccountData(address(this));
+		if (totalDebtBase != 0) {
+			revert ClosePositionDebtRemaining(totalDebtBase);
+		}
+
+		repaidAmount = totalRepaid;
+
+		if (repaidAmount == 0) {
+			revert InsufficientRepayAssetBalance(borrowAsset);
+		}
+
+		_aaveSetUseReserveAsCollateral(collateralAsset, false);
+		withdrawnAmount = _aaveWithdraw(collateralAsset, type(uint256).max, address(this));
+
+		emit PositionClosed(borrowAsset, collateralAsset, repaidAmount, withdrawnAmount);
 	}
 
 	function _swapByDex(Action memory action, uint256 amountIn, address recipient)

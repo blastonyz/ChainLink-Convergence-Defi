@@ -33,6 +33,13 @@ abstract contract AaveBase {
 		repaid = aave.repay(asset, amount, rateMode, onBehalfOf);
 	}
 
+	function _aaveWithdraw(address asset, uint256 amount, address to)
+		internal
+		returns (uint256 withdrawn)
+	{
+		withdrawn = aave.withdraw(asset, amount, to);
+	}
+
 	function _aaveFlashloanSimple(address receiver, address asset, uint256 amount, bytes memory params)
 		internal
 	{

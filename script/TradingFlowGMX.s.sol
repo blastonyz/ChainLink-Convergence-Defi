@@ -25,6 +25,7 @@ contract TradingFlowGMX is Script {
 	error MissingTriggerPrice();
 	error InvalidGmxOperation(string operation);
 	error InvalidOrderType(string orderType);
+		error InvalidCloseOrderType(string orderType);
 
 	function run() external {
 		uint256 privateKey = vm.envUint("PRIVATE_KEY");
@@ -62,13 +63,25 @@ contract TradingFlowGMX is Script {
 		bool shouldUnwrapNativeToken = vm.envOr("GMX_SHOULD_UNWRAP_NATIVE", false);
 		bool autoCancel = vm.envOr("GMX_AUTO_CANCEL", false);
 		bytes32 referralCode = vm.envOr("GMX_REFERRAL_CODE", bytes32(0));
+		bytes32 opHash = keccak256(bytes(operation));
+		bool isCloseOperation = opHash == keccak256("close");
 		if (collateralToken != weth) {
 			revert UnsupportedCollateralToken(collateralToken, weth);
 		}
-		if (collateralAmount == 0) revert InvalidCollateralAmount();
+		if (!isCloseOperation && collateralAmount == 0) revert InvalidCollateralAmount();
 		if (executionFee == 0) revert MissingExecutionFee();
 		if (sizeDeltaUsd == 0) revert MissingSizeDeltaUsd();
 		if (acceptablePrice == 0) revert MissingAcceptablePrice();
+		if (isCloseOperation) {
+			bytes32 orderTypeHash = keccak256(bytes(orderTypeName));
+			if (
+				orderTypeHash != keccak256("market-decrease")
+					&& orderTypeHash != keccak256("limit-decrease")
+					&& orderTypeHash != keccak256("stop-loss-decrease")
+			) {
+				revert InvalidCloseOrderType(orderTypeName);
+			}
+		}
 		if (
 			keccak256(bytes(orderTypeName)) == keccak256("limit-increase")
 				|| keccak256(bytes(orderTypeName)) == keccak256("stop-increase")
@@ -118,10 +131,11 @@ contract TradingFlowGMX is Script {
 		});
 
 		vm.startBroadcast(privateKey);
-		IWETH(weth).deposit{value: collateralAmount}();
-		IERC20(weth).transfer(gmxExecutor, collateralAmount);
+		if (collateralAmount > 0) {
+			IWETH(weth).deposit{value: collateralAmount}();
+			IERC20(weth).transfer(gmxExecutor, collateralAmount);
+		}
 
-		bytes32 opHash = keccak256(bytes(operation));
 		bytes32 orderKey;
 		if (opHash == keccak256("long")) {
 			orderKey = IGMXExecutor(gmxExecutor).createLongOrder{value: executionFee}(request);

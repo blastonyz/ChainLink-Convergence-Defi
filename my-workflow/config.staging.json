@@ -31,7 +31,7 @@
       "chain": "arbitrum",
       "coingeckoCoinId": "ethereum",
       "recommendationTarget": "gmx",
-      "gmxExecutorAddress": "0x37f6a860625a68b414C2D4c63840212f4271d3C0"
+      "gmxExecutorAddress": "0x1d315D963d7462F2931dF237B54736F90eE67faA"
     }
   ],
   "httpAuthorizedKeys": [
