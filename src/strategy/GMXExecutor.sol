@@ -194,7 +194,7 @@ contract GMXExecutor is IGMXExecutor, IReceiver {
 		       orderKey = exchangeRouter.createOrder(request.orderParams);
 	       }
 
-	function onReport(bytes calldata metadata, bytes calldata report) external override {
+	function onReport(bytes calldata , bytes calldata report) external override {
 		// Only validate sender if creForwarder is configured
 		// Metadata validation is optional and depends on CRE properly populating it
 		if (creForwarder != address(0) && msg.sender != creForwarder) {

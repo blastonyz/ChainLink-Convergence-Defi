@@ -43,6 +43,9 @@ export type Config = {
   httpAuthorizedKeys: Array<{ publicKey: string }>;
   httpAuthorizedKeysPosition?: Array<{ publicKey: string }>;
   httpAuthorizedKeysTrading?: Array<{ publicKey: string }>;
+  _cre?: {
+    workflowOwner?: string;
+  };
 };
 
 export type HttpPositionTriggerRequest = {

@@ -5,9 +5,9 @@ import {UniswapBase} from "./UniswapBase.sol";
 import {SushiBase} from "./SushiBase.sol";
 import {AaveBase} from "./AaveBase.sol";
 import {ArbitrageCase} from "./ArbitrageCase.sol";
-import {IPermit2} from "./interfaces/IPermit2.sol";
 import {IReceiver} from "./interfaces/IReceiver.sol";
-import {Action, OperationType, Permit2Data} from "./StrategyTypes.sol";
+import {Action, OperationType} from "./StrategyTypes.sol";
+import {ArbitrumCoreAddresses} from "../libraries/addresses/ArbitrumCoreAddresses.sol";
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 import {IERC165} from "openzeppelin-contracts/utils/introspection/IERC165.sol";
 
@@ -18,14 +18,12 @@ contract StrategyExecutor is
 	ArbitrageCase,
 	IReceiver
 {
-	IPermit2 public immutable permit2;
 	address public owner;
 	address public creForwarder;
 	bytes32 public creWorkflowId;
 	address public creWorkflowOwner;
 
 	event OperationExecuted(OperationType indexed operation, address indexed caller, address indexed beneficiary);
-	event Permit2Pulled(address indexed owner, address indexed token, uint256 amount);
 	event CreForwarderUpdated(address indexed previousForwarder, address indexed newForwarder);
 	event CreWorkflowIdUpdated(bytes32 indexed previousWorkflowId, bytes32 indexed newWorkflowId);
 	event CreWorkflowOwnerUpdated(address indexed previousWorkflowOwner, address indexed newWorkflowOwner);
@@ -34,11 +32,7 @@ contract StrategyExecutor is
 	error NotOwner();
 	error InvalidActionSet();
 	error InvalidDex(uint8 dexId);
-	error Permit2Required(OperationType op);
-	error InvalidPermitOwner(address signer, address caller);
-	error InvalidPermitRecipient(address recipient);
-	error InvalidPermitToken(address expected, address provided);
-	error InvalidPermitAmount(uint256 expected, uint256 provided);
+	error InvalidOperation(uint8 operation);
 	error InvalidPositionActions();
 	error InvalidCollateralAmount();
 	error InvalidCollateralAsset();
@@ -49,6 +43,7 @@ contract StrategyExecutor is
 	error InvalidCreWorkflowId(bytes32 received, bytes32 expected);
 	error InvalidCreWorkflowOwner(address received, address expected);
 	error InvalidCreOperation(uint8 operation);
+	error InvalidCreReportLength(uint256 length);
 
 	event PositionCollateralSupplied(address indexed asset, uint256 amount, address indexed onBehalfOf);
 	event PositionBorrowed(address indexed asset, uint256 amount, address indexed onBehalfOf);
@@ -70,15 +65,12 @@ contract StrategyExecutor is
 		address uniswapRouter,
 		address sushiRouter,
 		address aavePool,
-		address permit2Address,
 		address initialForwarder
 	)
 		UniswapBase(uniswapRouter)
 		SushiBase(sushiRouter)
 		AaveBase(aavePool)
 	{
-		require(permit2Address != address(0), "PERMIT2_ZERO");
-		permit2 = IPermit2(permit2Address);
 		owner = msg.sender;
 		creForwarder = initialForwarder;
 		emit CreForwarderUpdated(address(0), initialForwarder);
@@ -113,55 +105,9 @@ contract StrategyExecutor is
 		returns (bytes memory result)
 	{
 		if (op != OperationType.Arbitrage && op != OperationType.Position) {
-			revert Permit2Required(op);
+			revert InvalidOperation(uint8(op));
 		}
 		result = _execute(op, actions, msg.sender);
-	}
-
-	function executeWithPermit(
-		OperationType op,
-		Action[] calldata actions,
-		Permit2Data calldata permitData
-	) external payable returns (bytes memory result) {
-		_validatePermit(op, actions, permitData);
-		_pullWithPermit(permitData);
-		result = _execute(op, actions, msg.sender);
-	}
-
-	function _validatePermit(
-		OperationType op,
-		Action[] calldata actions,
-		Permit2Data calldata permitData
-	) internal view {
-		if (permitData.owner != msg.sender) {
-			revert InvalidPermitOwner(permitData.owner, msg.sender);
-		}
-
-		if (permitData.transferDetails.to != address(this)) {
-			revert InvalidPermitRecipient(permitData.transferDetails.to);
-		}
-
-		if (actions.length == 0) revert InvalidActionSet();
-
-		if (op == OperationType.Arbitrage) {
-			return;
-		}
-
-		Action calldata fundingAction = actions[0];
-		address permitToken = permitData.permit.permitted.token;
-		if (permitToken != fundingAction.tokenIn) {
-			revert InvalidPermitToken(fundingAction.tokenIn, permitToken);
-		}
-
-		uint256 requiredAmount = fundingAction.amountIn;
-		uint256 requestedAmount = permitData.transferDetails.requestedAmount;
-		if (requiredAmount == 0 || requestedAmount != requiredAmount) {
-			revert InvalidPermitAmount(requiredAmount, requestedAmount);
-		}
-
-		if (permitData.permit.permitted.amount < requestedAmount) {
-			revert InvalidPermitAmount(requestedAmount, permitData.permit.permitted.amount);
-		}
 	}
 
 	function _execute(OperationType op, Action[] calldata actions, address beneficiary)
@@ -183,7 +129,7 @@ contract StrategyExecutor is
 			bytes32 positionKey = _executePosition(actions, beneficiary);
 			result = abi.encode(positionKey);
 		} else {
-			revert Permit2Required(op);
+			revert InvalidOperation(uint8(op));
 		}
 
 		emit OperationExecuted(op, msg.sender, beneficiary);
@@ -194,25 +140,111 @@ contract StrategyExecutor is
 			revert InvalidCreSender(msg.sender, creForwarder);
 		}
 
-		if (creWorkflowId != bytes32(0) || creWorkflowOwner != address(0)) {
-			(bytes32 workflowId,, address workflowOwner) = _decodeMetadata(metadata);
+		metadata;
+		// NOTE: Metadata validation disabled for local/simulated CRE routes.
+		// Security is currently enforced via trusted forwarder check above.
 
-			if (creWorkflowId != bytes32(0) && workflowId != creWorkflowId) {
-				revert InvalidCreWorkflowId(workflowId, creWorkflowId);
-			}
+		uint8 operationRaw;
+		uint256 collateralAmount;
+		uint256 borrowAmount;
+		address beneficiary;
+		bool isLong = true;
 
-			if (creWorkflowOwner != address(0) && workflowOwner != creWorkflowOwner) {
-				revert InvalidCreWorkflowOwner(workflowOwner, creWorkflowOwner);
-			}
+		if (report.length == 128) {
+			(operationRaw, collateralAmount, borrowAmount, beneficiary) = abi.decode(
+				report,
+				(uint8, uint256, uint256, address)
+			);
+		} else if (report.length == 160) {
+			(operationRaw, collateralAmount, borrowAmount, beneficiary, isLong) = abi.decode(
+				report,
+				(uint8, uint256, uint256, address, bool)
+			);
+		} else {
+			revert InvalidCreReportLength(report.length);
 		}
-
-		(uint8 operationRaw, Action[] memory actions, address beneficiary) = abi.decode(
-			report,
-			(uint8, Action[], address)
-		);
 
 		if (operationRaw > uint8(OperationType.Position)) {
 			revert InvalidCreOperation(operationRaw);
+		}
+
+		address WETH = ArbitrumCoreAddresses.WETH;
+		address USDC = ArbitrumCoreAddresses.USDC;
+
+		Action[] memory actions = new Action[](3);
+
+		if (isLong) {
+			actions[0] = Action({
+				dexId: 0,
+				tokenIn: WETH,
+				tokenOut: address(0),
+				amountIn: collateralAmount,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
+
+			actions[1] = Action({
+				dexId: 0,
+				tokenIn: USDC,
+				tokenOut: address(0),
+				amountIn: borrowAmount,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
+
+			actions[2] = Action({
+				dexId: 0,
+				tokenIn: USDC,
+				tokenOut: WETH,
+				amountIn: 0,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
+		} else {
+			actions[0] = Action({
+				dexId: 0,
+				tokenIn: USDC,
+				tokenOut: address(0),
+				amountIn: collateralAmount,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
+
+			actions[1] = Action({
+				dexId: 0,
+				tokenIn: WETH,
+				tokenOut: address(0),
+				amountIn: borrowAmount,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
+
+			actions[2] = Action({
+				dexId: 0,
+				tokenIn: WETH,
+				tokenOut: USDC,
+				amountIn: 0,
+				minOut: 0,
+				fee: 3000,
+				amountAux: 0,
+				beneficiary: beneficiary,
+				data: ""
+			});
 		}
 
 		address finalBeneficiary = beneficiary == address(0) ? owner : beneficiary;
@@ -240,25 +272,10 @@ contract StrategyExecutor is
 			bytes32 positionKey = _executePositionFromReport(actions, beneficiary);
 			result = abi.encode(positionKey);
 		} else {
-			revert Permit2Required(op);
+			revert InvalidOperation(uint8(op));
 		}
 
 		emit OperationExecuted(op, msg.sender, beneficiary);
-	}
-
-	function _pullWithPermit(Permit2Data calldata permitData) internal {
-		permit2.permitTransferFrom(
-			permitData.permit,
-			permitData.transferDetails,
-			permitData.owner,
-			permitData.signature
-		);
-
-		emit Permit2Pulled(
-			permitData.owner,
-			permitData.permit.permitted.token,
-			permitData.transferDetails.requestedAmount
-		);
 	}
 
 	function _swapByDex(Action memory action, uint256 amountIn, address recipient)

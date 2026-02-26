@@ -1,12 +1,10 @@
 include .env
 
-MAINNET_RPC_URL ?= $(VIR_RPC_URL)
-RPC_URL ?= $(MAINNET_RPC_URL)
+RPC_URL ?= $(ARB_RPC_URL)
 PRIVATE_KEY ?= $(PK)
-EXECUTOR_MAINNET ?= 0x37f6a860625a68b414C2D4c63840212f4271d3C0
-EXECUTOR_ARB ?= 0xdc7a67547ADDB28B8334ae9C046426Ca87B35227
+EXECUTOR_ARB ?= 0x2157b12B8841B22A64aF4d049F2914829C8Fdc79
 GMX_EXECUTOR ?= 0x2157b12B8841B22A64aF4d049F2914829C8Fdc79
-EXECUTOR ?= $(EXECUTOR_MAINNET)
+UNISWAP_ROUTER ?= 0xE592427A0AEce92De3Edee1F18E0157C05861564
 SUSHI_ROUTER ?= 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
 GMX_ROUTER ?= 0x1C3fa76e6E1088bCE750f23a5BFcffa1efEF6A41
 GMX_ROUTER_SPENDER ?= 0x7452c558d45f8afC8c83dAe62C3f8A5BE19c71f6
@@ -48,10 +46,14 @@ GMX_SHOULD_UNWRAP_NATIVE ?= false
 GMX_AUTO_CANCEL ?= false
 GMX_REFERRAL_CODE ?= 0x0000000000000000000000000000000000000000000000000000000000000000
 AMOUNT_IN_ETH ?= 10000000000000000000
-AAVE_POOL ?= 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
-POSITION_ACCOUNT ?= $(EXECUTOR_MAINNET)
+AAVE_POOL_ARB ?= 0x794a61358D6845594F94dc1DB02A252b5b4814aD
+AAVE_POOL ?= $(AAVE_POOL_ARB)
+POSITION_ACCOUNT ?= $(EXECUTOR_ARB)
 GMX_POSITION_ACCOUNT ?= $(GMX_EXECUTOR)
 GMX_ORDER_KEY ?=
+USDC_TOKEN ?= 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+FUND_USDC_AMOUNT ?= 1000000000
+FUND_WETH_AMOUNT ?= 1000000000000000000
 
 # CRE Configuration
 CRE_FORWARDER ?= 0xd770499057619c9a76205fd4168161cf94abc532
@@ -72,17 +74,44 @@ encoded_key=$$(cast abi-encode 'f(bytes32,address)' $$list_const $(GMX_POSITION_
 list_key=$$(cast keccak $$encoded_key)
 endef
 
-deploy-executor:
-	PRIVATE_KEY=$(PRIVATE_KEY) SUSHI_ROUTER=$(SUSHI_ROUTER) GMX_ROUTER=$(GMX_ROUTER) forge script script/DeployExecutor.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
-
-deploy-executor-mainnet:
-	PRIVATE_KEY=$(PRIVATE_KEY) SUSHI_ROUTER=$(SUSHI_ROUTER) GMX_ROUTER=$(GMX_ROUTER) forge script script/DeployExecutor.s.sol --rpc-url $(MAINNET_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+# ================================================================
+# DEPLOYMENT TARGETS
+# ================================================================
 
 deploy-executor-arb:
-	PRIVATE_KEY=$(PRIVATE_KEY) SUSHI_ROUTER=$(SUSHI_ROUTER) GMX_ROUTER=$(GMX_ROUTER) forge script script/DeployExecutor.s.sol --rpc-url $(ARB_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+	PRIVATE_KEY=$(PRIVATE_KEY) UNISWAP_ROUTER=$(UNISWAP_ROUTER) SUSHI_ROUTER=$(SUSHI_ROUTER) AAVE_POOL=$(AAVE_POOL_ARB) forge script script/DeployExecutor.s.sol --rpc-url $(ARB_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
 deploy-gmx-executor-arb:
 	PRIVATE_KEY=$(PRIVATE_KEY) GMX_ROUTER=$(GMX_ROUTER) GMX_ROUTER_SPENDER=$(GMX_ROUTER_SPENDER) forge script script/DeployGmxExecutor.s.sol --rpc-url $(ARB_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
+
+# ================================================================
+# POSITION FLOW TARGETS
+# ================================================================
+
+position-flow:
+	PRIVATE_KEY=$(PRIVATE_KEY) EXECUTOR=$(EXECUTOR_ARB) BENEFICIARY=$(BENEFICIARY) COLLATERAL_IN_ETH=$(COLLATERAL_IN_ETH) BORROW_AMOUNT_USDC=$(BORROW_AMOUNT_USDC) MIN_WETH_OUT=$(MIN_WETH_OUT) FEE_USDC_TO_WETH=$(FEE_USDC_TO_WETH) forge script script/PositionFlow.s.sol --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --slow
+
+position-info:
+	cast call $(AAVE_POOL_ARB) "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $(POSITION_ACCOUNT) --rpc-url $(RPC_URL)
+
+# Funding targets for USDC and WETH
+fund-usdc:
+	cast send $(USDC_TOKEN) "transfer(address,uint256)" $(POSITION_ACCOUNT) $(FUND_USDC_AMOUNT) --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+
+fund-weth:
+	cast send $(WETH_TOKEN) "deposit()" --value 1ether --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+	cast send $(WETH_TOKEN) "transfer(address,uint256)" $(POSITION_ACCOUNT) $(FUND_WETH_AMOUNT) --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+
+fund-usdc-and-weth: fund-usdc fund-weth
+
+configure-cre-position:
+	cast send $(EXECUTOR_ARB) "setCreForwarder(address)" $(CRE_FORWARDER) --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+	cast send $(EXECUTOR_ARB) "setCreWorkflowId(bytes32)" $(CRE_WORKFLOW_ID) --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+	cast send $(EXECUTOR_ARB) "setCreWorkflowOwner(address)" $(CRE_WORKFLOW_OWNER) --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY)
+
+# ================================================================
+# GMX TRADING TARGETS
+# ================================================================
 
 trading-flow: 
 	PRIVATE_KEY=$(PRIVATE_KEY) GMX_EXECUTOR=$(GMX_EXECUTOR) WETH_TOKEN=$(WETH_TOKEN) AMOUNT_IN_ETH=$(AMOUNT_IN_ETH) GMX_OPERATION=$(GMX_OPERATION) GMX_ORDER_TYPE=$(GMX_ORDER_TYPE) GMX_ORDER_VAULT=$(GMX_ORDER_VAULT) GMX_MARKET=$(GMX_MARKET) GMX_CANCELLATION_RECEIVER=$(GMX_CANCELLATION_RECEIVER) GMX_CALLBACK_CONTRACT=$(GMX_CALLBACK_CONTRACT) GMX_UI_FEE_RECEIVER=$(GMX_UI_FEE_RECEIVER) GMX_COLLATERAL_TOKEN=$(GMX_COLLATERAL_TOKEN) GMX_COLLATERAL_AMOUNT=$(GMX_COLLATERAL_AMOUNT) GMX_EXECUTION_FEE=$(GMX_EXECUTION_FEE) GMX_SIZE_DELTA_USD=$(GMX_SIZE_DELTA_USD) GMX_INITIAL_COLLATERAL_DELTA=$(GMX_INITIAL_COLLATERAL_DELTA) GMX_TRIGGER_PRICE=$(GMX_TRIGGER_PRICE) GMX_ACCEPTABLE_PRICE=$(GMX_ACCEPTABLE_PRICE) GMX_CALLBACK_GAS_LIMIT=$(GMX_CALLBACK_GAS_LIMIT) GMX_MIN_OUTPUT_AMOUNT=$(GMX_MIN_OUTPUT_AMOUNT) GMX_VALID_FROM_TIME=$(GMX_VALID_FROM_TIME) GMX_IS_LONG=$(GMX_IS_LONG) GMX_SHOULD_UNWRAP_NATIVE=$(GMX_SHOULD_UNWRAP_NATIVE) GMX_AUTO_CANCEL=$(GMX_AUTO_CANCEL) GMX_REFERRAL_CODE=$(GMX_REFERRAL_CODE) forge script script/TradingFlowGMX.s.sol --rpc-url $(ARB_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --slow
@@ -90,13 +119,9 @@ trading-flow:
 configure-cre-gmx-executor:
 	ARB_RPC_URL=$(RPC_URL) GMX_EXECUTOR=$(GMX_EXECUTOR) PRIVATE_KEY=$(PRIVATE_KEY) bash scripts/configure-cre.sh
 
-position-flow:
-	PRIVATE_KEY=$(PRIVATE_KEY) EXECUTOR=$(EXECUTOR) BENEFICIARY=$(BENEFICIARY) COLLATERAL_IN_ETH=$(COLLATERAL_IN_ETH) BORROW_AMOUNT_USDC=$(BORROW_AMOUNT_USDC) MIN_WETH_OUT=$(MIN_WETH_OUT) FEE_USDC_TO_WETH=$(FEE_USDC_TO_WETH) forge script script/PositionFlow.s.sol --rpc-url $(MAINNET_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --slow
-
-position-info:
-	cast call $(AAVE_POOL) "getUserAccountData(address)(uint256,uint256,uint256,uint256,uint256,uint256)" $(POSITION_ACCOUNT) --rpc-url $(MAINNET_RPC_URL)
-
-gmx-position-key:
+# ================================================================
+# GMX POSITION QUERIES
+# ================================================================
 	@set -eu; \
 	$(GMX_ACCOUNT_POSITION_LIST_KEY_SNIPPET); \
 	echo $$list_key

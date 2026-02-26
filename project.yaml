@@ -26,15 +26,11 @@
 # ==========================================================================
 staging-settings:
   rpcs:
-    - chain-name: ethereum-mainnet
-      url: https://virtual.rpc.tenderly.co/blasaz/project/private/main/9db6114a-a209-4cbe-a28b-361e135e227d
     - chain-name: ethereum-mainnet-arbitrum-1
-      url: https://virtual.arbitrum.eu.rpc.tenderly.co/f539072e-e52d-40e9-b2ce-3e02561d451a
+      url: https://virtual.arbitrum.eu.rpc.tenderly.co/89e4ec43-a478-4d01-9eb3-df481d3fbd91
 
 # ==========================================================================
 production-settings:
   rpcs:
-    - chain-name: ethereum-mainnet
-      url: https://virtual.rpc.tenderly.co/blasaz/project/private/main/9db6114a-a209-4cbe-a28b-361e135e227d
     - chain-name: ethereum-mainnet-arbitrum-1
-      url: https://virtual.arbitrum.eu.rpc.tenderly.co/f539072e-e52d-40e9-b2ce-3e02561d451a
+      url: https://virtual.arbitrum.eu.rpc.tenderly.co/89e4ec43-a478-4d01-9eb3-df481d3fbd91

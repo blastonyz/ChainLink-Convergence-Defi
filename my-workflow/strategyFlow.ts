@@ -30,6 +30,10 @@ const GMX_SHORT_PARAMS = parseAbiParameters(
   "uint8 action,address collateralToken,address market,uint256 collateralAmountUsd,uint256 sizeUsd,uint256 triggerPrice,uint256 acceptablePrice",
 );
 
+const POSITION_PARAMS = parseAbiParameters(
+  "uint8 operationType,uint256 collateralAmount,uint256 borrowAmount,address beneficiary,bool isLong",
+);
+
 type GmxAction = "long" | "short" | "close";
 
 type ActionResolutionSource = "forced" | "model-action" | "model-text" | "fallback";
@@ -252,6 +256,31 @@ const encodeGmxIntentPayload = (action: GmxAction, intent: GmxIntentPayload): st
   ]);
 };
 
+const encodePositionPayload = (
+  action: GmxAction,
+  collateralAmount: bigint,
+  borrowAmount: bigint,
+  beneficiary: `0x${string}`,
+): string => {
+  const operationType = 1;
+  const isLong = action === "long";
+
+  return encodeAbiParameters(POSITION_PARAMS, [operationType, collateralAmount, borrowAmount, beneficiary, isLong]);
+};
+
+const normalizeTxHash = (rawHash: Uint8Array | undefined): string => {
+  if (!rawHash || rawHash.length === 0) {
+    return "";
+  }
+
+  const hexHash = bytesToHex(rawHash);
+  if (/^0x0{64}$/i.test(hexHash)) {
+    return "";
+  }
+
+  return hexHash;
+};
+
 const tryExecuteGmxIntent = (
   runtime: Runtime<Config>,
   receiver: string,
@@ -316,10 +345,120 @@ const tryExecuteGmxIntent = (
       .result();
 
     if (writeResult.txStatus === TxStatus.SUCCESS) {
+      const txHash = normalizeTxHash(writeResult.txHash);
       return {
-        txHash: bytesToHex(writeResult.txHash || new Uint8Array(32)),
+        txHash,
         status: "success",
-        detail: `${action.toUpperCase()} order submitted`,
+        detail: txHash ? `${action.toUpperCase()} order submitted` : `${action.toUpperCase()} order submitted (tx hash unavailable in simulator)`,
+      };
+    }
+
+    return {
+      txHash: "",
+      status: "failed",
+      detail: `writeReport status=${writeResult.txStatus}`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      txHash: "",
+      status: "failed",
+      detail: message,
+    };
+  }
+};
+
+const tryExecutePositionIntent = (
+  runtime: Runtime<Config>,
+  receiver: string,
+  action: GmxAction,
+  chain: ChainConfig,
+): { txHash: string; status: "success" | "failed"; detail: string } => {
+  if (!runtime.config.enableExecution) {
+    return {
+      txHash: "",
+      status: "failed",
+      detail: "Execution disabled in config (enableExecution=false)",
+    };
+  }
+
+  if (action === "close") {
+    return {
+      txHash: "",
+      status: "failed",
+      detail: `Unsupported position action: ${action}`,
+    };
+  }
+
+  const execution = runtime.config.gmxExecution;
+  if (!execution?.chainSelectorName) {
+    return {
+      txHash: "",
+      status: "failed",
+      detail: "Missing gmxExecution.chainSelectorName in config",
+    };
+  }
+
+  const network = getNetwork({
+    chainFamily: "evm",
+    chainSelectorName: execution.chainSelectorName,
+    isTestnet: false,
+  });
+
+  if (!network) {
+    return {
+      txHash: "",
+      status: "failed",
+      detail: `Unknown network: ${execution.chainSelectorName}`,
+    };
+  }
+
+  const collateralAmount = action === "long" ? 1_000_000_000_000_000_000n : 1_000_000_000n;
+  const borrowAmount = action === "long" ? 1_000_000_000n : 250_000_000_000_000_000n;
+  const workflowOwner = runtime.config._cre?.workflowOwner;
+  if (!workflowOwner) {
+    return {
+      txHash: "",
+      status: "failed",
+      detail: "Missing _cre.workflowOwner in config for position beneficiary",
+    };
+  }
+  const beneficiary = asAddress(workflowOwner);
+
+  try {
+    runtime.log(
+      `[POSITION payload] action=${action} collateralAmount=${collateralAmount.toString()} borrowAmount=${borrowAmount.toString()}`,
+    );
+
+    const encodedPayload = encodePositionPayload(action, collateralAmount, borrowAmount, beneficiary);
+    const report = runtime
+      .report({
+        encodedPayload: hexToBase64(encodedPayload),
+        encoderName: "evm",
+        signingAlgo: "ecdsa",
+        hashingAlgo: "keccak256",
+      })
+      .result();
+
+    const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector);
+    const writeResult = evmClient
+      .writeReport(runtime, {
+        receiver,
+        report,
+        gasConfig: {
+          gasLimit: execution.gasLimit,
+        },
+      })
+      .result();
+
+    if (writeResult.txStatus === TxStatus.SUCCESS) {
+      const txHash = normalizeTxHash(writeResult.txHash);
+      return {
+        txHash,
+        status: "success",
+        detail: txHash
+          ? `POSITION ${action.toUpperCase()} submitted`
+          : `POSITION ${action.toUpperCase()} submitted (tx hash unavailable in simulator)`,
       };
     }
 
@@ -534,28 +673,36 @@ const recommendForChain = (
     parsedGemini.strategy || "",
     parsedGemini.rationale || "",
   );
-  const action =
-    chain.recommendationTarget === "gmx"
-      ? actionResolution.action
-      : "none";
+  const action = actionResolution.action;
 
   if (chain.recommendationTarget === "gmx") {
     runtime.log(
       `[GMX switcher] source=${actionResolution.source} modelAction=${modelAction ?? "n/a"} resolvedAction=${action}`,
     );
+  } else {
+    runtime.log(
+      `[POSITION switcher] source=${actionResolution.source} modelAction=${modelAction ?? "n/a"} resolvedAction=${action}`,
+    );
   }
-  const shouldExecute =
+  const shouldExecuteGmx =
     chain.recommendationTarget === "gmx" &&
     action !== "none" &&
     confidence >= options.minConfidence &&
     (chain.gmxExecutorAddress || "").length > 0;
+
+  const shouldExecutePosition =
+    chain.recommendationTarget === "aave-uniswap" &&
+    action !== "none" &&
+    action !== "close" &&
+    confidence >= options.minConfidence &&
+    (chain.strategyExecutorAddress || "").length > 0;
 
   const gmxIntent =
     chain.recommendationTarget === "gmx" && action !== "none"
       ? buildGmxIntentPayload(action, summary, confidence, runtime.config.gmxIntent, chain.gmxIntent)
       : undefined;
 
-  const executionResult = shouldExecute && gmxIntent
+  const gmxExecutionResult = shouldExecuteGmx && gmxIntent
     ? tryExecuteGmxIntent(runtime, chain.gmxExecutorAddress || "", action, gmxIntent)
     : {
         txHash: "",
@@ -569,6 +716,26 @@ const recommendForChain = (
                 ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}`
                 : "Missing GMX receiver address",
       };
+
+  const positionExecutionResult = shouldExecutePosition
+    ? tryExecutePositionIntent(runtime, chain.strategyExecutorAddress || "", action, chain)
+    : {
+        txHash: "",
+        status: "failed" as const,
+        detail:
+          chain.recommendationTarget !== "aave-uniswap"
+            ? "Not a position target"
+            : action === "close"
+              ? "Close action not implemented for position flow"
+              : action === "none"
+                ? "No position action resolved"
+                : confidence < options.minConfidence
+                  ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}`
+                  : "Missing StrategyExecutor address",
+      };
+
+  const shouldExecute = chain.recommendationTarget === "gmx" ? shouldExecuteGmx : shouldExecutePosition;
+  const executionResult = chain.recommendationTarget === "gmx" ? gmxExecutionResult : positionExecutionResult;
 
   return {
     chain: chain.chain,

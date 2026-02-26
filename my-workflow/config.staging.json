@@ -10,7 +10,7 @@
   "coingeckoApiKeySecretId": "COINGECKO_API_KEY",
   "geminiApiKeySecretId": "GEMINI_API_KEY",
   "enableExecution": true,
-  "defaultTradingMinConfidence": 60,
+  "defaultTradingMinConfidence": 0,
   "gmxExecution": {
     "chainSelectorName": "ethereum-mainnet-arbitrum-1",
     "gasLimit": "2500000"
@@ -22,22 +22,16 @@
   },
   "chains": [
     {
-      "chain": "mainnet",
+      "chain": "arbitrum",
       "coingeckoCoinId": "ethereum",
       "recommendationTarget": "aave-uniswap",
-      "strategyExecutorAddress": "0x37f6a860625a68b414C2D4c63840212f4271d3C0"
+      "strategyExecutorAddress": "0x2157b12B8841B22A64aF4d049F2914829C8Fdc79"
     },
     {
       "chain": "arbitrum",
       "coingeckoCoinId": "ethereum",
       "recommendationTarget": "gmx",
-      "strategyExecutorAddress": "",
-      "gmxExecutorAddress": "0x2157b12B8841B22A64aF4d049F2914829C8Fdc79",
-      "gmxIntent": {
-        "collateralToken": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-        "market": "0x70d95587d40A2caf56bd97485aB3Eec10Bee6336",
-        "slippageBps": 100
-      }
+      "gmxExecutorAddress": "0x37f6a860625a68b414C2D4c63840212f4271d3C0"
     }
   ],
   "httpAuthorizedKeys": [
