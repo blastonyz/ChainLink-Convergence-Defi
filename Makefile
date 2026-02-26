@@ -3,7 +3,7 @@ include .env
 RPC_URL ?= $(ARB_RPC_URL)
 PRIVATE_KEY ?= $(PK)
 EXECUTOR_ARB ?= 0x55a8F4Abf58bDa5AA26ddB402f672b69Eb6D2788
-GMX_EXECUTOR ?= 0x1d315D963d7462F2931dF237B54736F90eE67faA
+GMX_EXECUTOR ?= 0xC1D9D726BBE5af20bd844c6F6ECf4BCa52E985e9
 UNISWAP_ROUTER ?= 0xE592427A0AEce92De3Edee1F18E0157C05861564
 SUSHI_ROUTER ?= 0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F
 GMX_ROUTER ?= 0x1C3fa76e6E1088bCE750f23a5BFcffa1efEF6A41
@@ -122,12 +122,34 @@ trading-flow:
 gmx-close-flow:
 	PRIVATE_KEY=$(PRIVATE_KEY) GMX_EXECUTOR=$(GMX_EXECUTOR) WETH_TOKEN=$(WETH_TOKEN) AMOUNT_IN_ETH=0 GMX_OPERATION=close GMX_ORDER_TYPE=market-decrease GMX_ORDER_VAULT=$(GMX_ORDER_VAULT) GMX_MARKET=$(GMX_MARKET) GMX_CANCELLATION_RECEIVER=$(GMX_CANCELLATION_RECEIVER) GMX_CALLBACK_CONTRACT=$(GMX_CALLBACK_CONTRACT) GMX_UI_FEE_RECEIVER=$(GMX_UI_FEE_RECEIVER) GMX_COLLATERAL_TOKEN=$(GMX_COLLATERAL_TOKEN) GMX_COLLATERAL_AMOUNT=0 GMX_EXECUTION_FEE=$(GMX_EXECUTION_FEE) GMX_SIZE_DELTA_USD=$(GMX_SIZE_DELTA_USD) GMX_INITIAL_COLLATERAL_DELTA=$(GMX_INITIAL_COLLATERAL_DELTA) GMX_TRIGGER_PRICE=$(GMX_TRIGGER_PRICE) GMX_ACCEPTABLE_PRICE=$(GMX_ACCEPTABLE_PRICE) GMX_CALLBACK_GAS_LIMIT=$(GMX_CALLBACK_GAS_LIMIT) GMX_MIN_OUTPUT_AMOUNT=$(GMX_MIN_OUTPUT_AMOUNT) GMX_VALID_FROM_TIME=$(GMX_VALID_FROM_TIME) GMX_IS_LONG=$(GMX_IS_LONG) GMX_SHOULD_UNWRAP_NATIVE=$(GMX_SHOULD_UNWRAP_NATIVE) GMX_AUTO_CANCEL=$(GMX_AUTO_CANCEL) GMX_REFERRAL_CODE=$(GMX_REFERRAL_CODE) forge script script/TradingFlowGMX.s.sol --rpc-url $(ARB_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --slow
 
+gmx-close-auto:
+	@set -eu; \
+	$(GMX_ACCOUNT_POSITION_LIST_KEY_SNIPPET); \
+	count=$$(cast call $(GMX_DATA_STORE) "getBytes32Count(bytes32)(uint256)" $$list_key --rpc-url $(ARB_RPC_URL)); \
+	if [ "$$count" = "0" ]; then echo "No open GMX positions for GMX_POSITION_ACCOUNT=$(GMX_POSITION_ACCOUNT)"; exit 1; fi; \
+	position_key=$$(cast call $(GMX_DATA_STORE) "getBytes32ValuesAt(bytes32,uint256,uint256)(bytes32[])" $$list_key 0 1 --rpc-url $(ARB_RPC_URL) | grep -oE '0x[0-9a-fA-F]{64}' | head -n 1); \
+	if [ -z "$$position_key" ]; then echo "Could not derive position key"; exit 1; fi; \
+	size_usd_f=$$(cast keccak "$$(cast abi-encode 'f(string)' 'SIZE_IN_USD')"); \
+	is_long_f=$$(cast keccak "$$(cast abi-encode 'f(string)' 'IS_LONG')"); \
+	size_usd_k=$$(cast keccak "$$(cast abi-encode 'f(bytes32,bytes32)' $$position_key $$size_usd_f)"); \
+	is_long_k=$$(cast keccak "$$(cast abi-encode 'f(bytes32,bytes32)' $$position_key $$is_long_f)"); \
+	size_usd=$$(cast call $(GMX_DATA_STORE) 'getUint(bytes32)(uint256)' $$size_usd_k --rpc-url $(ARB_RPC_URL)); \
+	is_long=$$(cast call $(GMX_DATA_STORE) 'getBool(bytes32)(bool)' $$is_long_k --rpc-url $(ARB_RPC_URL)); \
+	if [ "$$size_usd" = "0" ]; then echo "Position size is zero; nothing to close"; exit 1; fi; \
+	echo "Closing GMX position"; \
+	echo "positionKey=$$position_key"; \
+	echo "sizeDeltaUsd=$$size_usd"; \
+	echo "isLong=$$is_long"; \
+	$(MAKE) --no-print-directory gmx-close-flow GMX_SIZE_DELTA_USD=$$size_usd GMX_IS_LONG=$$is_long
+
 configure-cre-gmx-executor:
 	ARB_RPC_URL=$(RPC_URL) GMX_EXECUTOR=$(GMX_EXECUTOR) PRIVATE_KEY=$(PRIVATE_KEY) bash scripts/configure-cre.sh
 
 # ================================================================
 # GMX POSITION QUERIES
 # ================================================================
+
+gmx-position-list-key:
 	@set -eu; \
 	$(GMX_ACCOUNT_POSITION_LIST_KEY_SNIPPET); \
 	echo $$list_key
