@@ -15906,10 +15906,6 @@ var sendErrorResponse = (error) => {
   }
   hostBindings.sendResponse(payload);
 };
-init_exports();
-init_encodeAbiParameters();
-var GMX_SHORT_PARAMS = parseAbiParameters("uint8 action,address collateralToken,address market,uint256 collateralAmountUsd,uint256 sizeUsd,uint256 triggerPrice,uint256 acceptablePrice");
-var POSITION_PARAMS = parseAbiParameters("uint8 operationType,uint256 collateralAmount,uint256 borrowAmount,address beneficiary,bool isLong");
 var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 var utf8ToBase64 = (input) => {
   const bytes = new TextEncoder().encode(input);
@@ -15971,13 +15967,12 @@ var parseMinConfidence = (value2, fallback) => {
   }
   return value2;
 };
+init_exports();
+init_encodeAbiParameters();
 var resolveGmxActionFromModel = (strategy, rationale) => {
   const haystack = `${strategy} ${rationale}`.toLowerCase();
   if (haystack.includes("short")) {
     return "short";
-  }
-  if (haystack.includes("close") || haystack.includes("reduce")) {
-    return "close";
   }
   if (haystack.includes("long") || haystack.includes("buy")) {
     return "long";
@@ -15986,7 +15981,7 @@ var resolveGmxActionFromModel = (strategy, rationale) => {
 };
 var normalizeTextAction = (value2) => {
   const normalized = value2.trim().toLowerCase();
-  if (normalized === "long" || normalized === "short" || normalized === "close" || normalized === "none") {
+  if (normalized === "long" || normalized === "short" || normalized === "none") {
     return normalized;
   }
   if (normalized.includes("sell") || normalized.includes("bear") || normalized.includes("downtrend")) {
@@ -15996,7 +15991,7 @@ var normalizeTextAction = (value2) => {
     return "long";
   }
   if (normalized.includes("exit") || normalized.includes("reduce")) {
-    return "close";
+    return "none";
   }
   return;
 };
@@ -16050,8 +16045,123 @@ var buildGmxIntentPayload = (action, summary, confidence, globalIntent, chainInt
     acceptablePrice
   };
 };
+var stripCodeFences = (content) => {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("```")) {
+    return trimmed;
+  }
+  const withoutStart = trimmed.replace(/^```[a-zA-Z]*\s*/, "");
+  return withoutStart.replace(/\s*```$/, "").trim();
+};
+var getPromptDirectionInstruction = (chain, forcedTradingAction) => {
+  if (chain.recommendationTarget === "gmx" && forcedTradingAction !== "auto") {
+    return `Action is forced to ${forcedTradingAction}. Set action="${forcedTradingAction}" and align strategy/rationale to that action.`;
+  }
+  return "Choose action from market context and return it in action field.";
+};
+var getPromptRouteHint = (chain) => {
+  if (chain.recommendationTarget === "gmx") {
+    return `Use GMXExecutor route on chain=${chain.chain}. gmxExecutorAddress=${chain.gmxExecutorAddress || "n/a"}`;
+  }
+  return `Use StrategyExecutor position flow on chain=${chain.chain}. strategyExecutorAddress=${chain.strategyExecutorAddress || "n/a"}`;
+};
+var buildPrompt = (chain, summary, ohlc, forcedTradingAction, generatedAt) => {
+  const recent = ohlc.slice(-5);
+  const directionInstruction = getPromptDirectionInstruction(chain, forcedTradingAction);
+  const routeHint = getPromptRouteHint(chain);
+  return [
+    "You are a DeFi strategy analyst for an automated Chainlink CRE workflow.",
+    "Respond strictly in JSON with keys: action, strategy, confidence, rationale, riskControls.",
+    "action must be one of: long, short, none.",
+    "confidence must be a number from 0 to 100.",
+    "riskControls must be an array of 3 short strings.",
+    directionInstruction,
+    `Network=${chain.chain}; target=${chain.recommendationTarget}; coin=${chain.coingeckoCoinId}`,
+    routeHint,
+    `GeneratedAt=${generatedAt}`,
+    `OHLC summary: candles=${summary.candles}, firstOpen=${summary.firstOpen}, lastClose=${summary.lastClose}, pctChange=${summary.pctChange}, high=${summary.periodHigh}, low=${summary.periodLow}`,
+    `Recent OHLC candles (ts,open,high,low,close): ${safeJsonStringify(recent)}`,
+    "Prioritize conservative risk management and avoid guaranteed claims."
+  ].join(`
+`);
+};
+var toNumber = (value2) => {
+  if (typeof value2 === "number") {
+    return value2;
+  }
+  if (typeof value2 === "string") {
+    const parsed = Number.parseFloat(value2);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+};
+var summarizeOhlc = (ohlc) => {
+  const firstOpen = toNumber(ohlc[0]?.[1]);
+  const lastClose = toNumber(ohlc[ohlc.length - 1]?.[4]);
+  const highs = ohlc.map((point) => toNumber(point[2]));
+  const lows = ohlc.map((point) => toNumber(point[3]));
+  const periodHigh = highs.length ? Math.max(...highs) : 0;
+  const periodLow = lows.length ? Math.min(...lows) : 0;
+  const pctChange = firstOpen > 0 ? (lastClose - firstOpen) / firstOpen * 100 : 0;
+  return {
+    candles: ohlc.length,
+    firstOpen,
+    lastClose,
+    pctChange,
+    periodHigh,
+    periodLow
+  };
+};
+var fetchOhlc = (sendRequester, request) => {
+  const headers = {};
+  headers[request.apiKeyHeader] = request.apiKey;
+  const response = sendRequester.sendRequest({
+    url: request.url,
+    method: "GET",
+    headers
+  }).result();
+  if (!ok(response)) {
+    throw new Error(`CoinGecko request failed: ${response.statusCode} | ${text(response)}`);
+  }
+  return safeJsonStringify(json(response));
+};
+var askGemini = (sendRequester, request) => {
+  const body = {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: request.prompt }]
+      }
+    ],
+    generationConfig: {
+      temperature: request.temperature,
+      responseMimeType: "application/json",
+      maxOutputTokens: request.maxOutputTokens
+    }
+  };
+  const response = sendRequester.sendRequest({
+    url: request.url,
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: utf8ToBase64(safeJsonStringify(body))
+  }).result();
+  if (!ok(response)) {
+    throw new Error(`Gemini request failed: ${response.statusCode} | ${text(response)}`);
+  }
+  const payload = json(response);
+  const textOutput = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!textOutput) {
+    throw new Error("Gemini returned an empty response");
+  }
+  return textOutput;
+};
+var GMX_SHORT_PARAMS = parseAbiParameters("uint8 action,address collateralToken,address market,uint256 collateralAmountUsd,uint256 sizeUsd,uint256 triggerPrice,uint256 acceptablePrice");
 var encodeGmxIntentPayload = (action, intent) => {
-  const actionCode = action === "long" ? 0 : action === "short" ? 1 : 2;
+  const actionCode = action === "long" ? 0 : 1;
   return encodeAbiParameters(GMX_SHORT_PARAMS, [
     actionCode,
     intent.collateralToken,
@@ -16061,11 +16171,6 @@ var encodeGmxIntentPayload = (action, intent) => {
     intent.triggerPrice,
     intent.acceptablePrice
   ]);
-};
-var encodePositionPayload = (action, collateralAmount, borrowAmount, beneficiary) => {
-  const operationType = 1;
-  const isLong = action === "long";
-  return encodeAbiParameters(POSITION_PARAMS, [operationType, collateralAmount, borrowAmount, beneficiary, isLong]);
 };
 var normalizeTxHash = (rawHash) => {
   if (!rawHash || rawHash.length === 0) {
@@ -16144,19 +16249,18 @@ var tryExecuteGmxIntent = (runtime2, receiver, action, intent) => {
     };
   }
 };
-var tryExecutePositionIntent = (runtime2, receiver, action, chain) => {
+var POSITION_PARAMS = parseAbiParameters("uint8 operationType,uint256 collateralAmount,uint256 borrowAmount,address beneficiary,bool isLong");
+var encodePositionPayload = (action, collateralAmount, borrowAmount, beneficiary) => {
+  const operationType = 1;
+  const isLong = action === "long";
+  return encodeAbiParameters(POSITION_PARAMS, [operationType, collateralAmount, borrowAmount, beneficiary, isLong]);
+};
+var tryExecutePositionIntent = (runtime2, receiver, action, _chain) => {
   if (!runtime2.config.enableExecution) {
     return {
       txHash: "",
       status: "failed",
       detail: "Execution disabled in config (enableExecution=false)"
-    };
-  }
-  if (action === "close") {
-    return {
-      txHash: "",
-      status: "failed",
-      detail: `Unsupported position action: ${action}`
     };
   }
   const execution = runtime2.config.gmxExecution;
@@ -16229,96 +16333,6 @@ var tryExecutePositionIntent = (runtime2, receiver, action, chain) => {
     };
   }
 };
-var summarizeOhlc = (ohlc) => {
-  const firstOpen = asNumber(ohlc[0]?.[1]);
-  const lastClose = asNumber(ohlc[ohlc.length - 1]?.[4]);
-  const highs = ohlc.map((point) => asNumber(point[2]));
-  const lows = ohlc.map((point) => asNumber(point[3]));
-  const periodHigh = highs.length ? Math.max(...highs) : 0;
-  const periodLow = lows.length ? Math.min(...lows) : 0;
-  const pctChange = firstOpen > 0 ? (lastClose - firstOpen) / firstOpen * 100 : 0;
-  return {
-    candles: ohlc.length,
-    firstOpen,
-    lastClose,
-    pctChange,
-    periodHigh,
-    periodLow
-  };
-};
-var stripCodeFences = (content) => {
-  const trimmed = content.trim();
-  if (!trimmed.startsWith("```")) {
-    return trimmed;
-  }
-  const withoutStart = trimmed.replace(/^```[a-zA-Z]*\s*/, "");
-  return withoutStart.replace(/\s*```$/, "").trim();
-};
-var fetchOhlc = (sendRequester, request) => {
-  const headers = {};
-  headers[request.apiKeyHeader] = request.apiKey;
-  const response = sendRequester.sendRequest({
-    url: request.url,
-    method: "GET",
-    headers
-  }).result();
-  if (!ok(response)) {
-    throw new Error(`CoinGecko request failed: ${response.statusCode} | ${text(response)}`);
-  }
-  return safeJsonStringify(json(response));
-};
-var askGemini = (sendRequester, request) => {
-  const body = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: request.prompt }]
-      }
-    ],
-    generationConfig: {
-      temperature: request.temperature,
-      responseMimeType: "application/json",
-      maxOutputTokens: request.maxOutputTokens
-    }
-  };
-  const response = sendRequester.sendRequest({
-    url: request.url,
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: utf8ToBase64(safeJsonStringify(body))
-  }).result();
-  if (!ok(response)) {
-    throw new Error(`Gemini request failed: ${response.statusCode}`);
-  }
-  const payload = json(response);
-  const textOutput = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!textOutput) {
-    throw new Error("Gemini returned an empty response");
-  }
-  return textOutput;
-};
-var buildPrompt = (chain, summary, ohlc, forcedTradingAction, generatedAt) => {
-  const recent = ohlc.slice(-5);
-  const directionInstruction = chain.recommendationTarget === "gmx" && forcedTradingAction !== "auto" ? `Action is forced to ${forcedTradingAction}. Set action="${forcedTradingAction}" and align strategy/rationale to that action.` : "Choose action from market context and return it in action field.";
-  const routeHint = chain.recommendationTarget === "gmx" ? `Use GMXExecutor route on chain=${chain.chain}. gmxExecutorAddress=${chain.gmxExecutorAddress || "n/a"}` : `Use StrategyExecutor position flow on chain=${chain.chain}. strategyExecutorAddress=${chain.strategyExecutorAddress || "n/a"}`;
-  return [
-    "You are a DeFi strategy analyst for an automated Chainlink CRE workflow.",
-    "Respond strictly in JSON with keys: action, strategy, confidence, rationale, riskControls.",
-    "action must be one of: long, short, close, none.",
-    "confidence must be a number from 0 to 100.",
-    "riskControls must be an array of 3 short strings.",
-    directionInstruction,
-    `Network=${chain.chain}; target=${chain.recommendationTarget}; coin=${chain.coingeckoCoinId}`,
-    routeHint,
-    `GeneratedAt=${generatedAt}`,
-    `OHLC summary: candles=${summary.candles}, firstOpen=${summary.firstOpen}, lastClose=${summary.lastClose}, pctChange=${summary.pctChange}, high=${summary.periodHigh}, low=${summary.periodLow}`,
-    `Recent OHLC candles (ts,open,high,low,close): ${safeJsonStringify(recent)}`,
-    "Prioritize conservative risk management and avoid guaranteed claims."
-  ].join(`
-`);
-};
 var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApiKey, options) => {
   const ohlcUrl = `${runtime2.config.coingeckoApiBaseUrl}/coins/${chain.coingeckoCoinId}/ohlc?vs_currency=${runtime2.config.coingeckoVsCurrency}&days=${runtime2.config.ohlcDays}`;
   const coingeckoApiKeyHeader = runtime2.config.coingeckoApiKeyHeader || "x-cg-pro-api-key";
@@ -16336,13 +16350,28 @@ var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApi
   const geminiUrl = `${runtime2.config.geminiApiBaseUrl}/models/${runtime2.config.geminiModel}:generateContent?key=${geminiApiKey}`;
   const geminiTemperature = typeof runtime2.config.geminiTemperature === "number" && Number.isFinite(runtime2.config.geminiTemperature) ? Math.max(0, Math.min(1, runtime2.config.geminiTemperature)) : 0.25;
   const geminiMaxOutputTokens = typeof runtime2.config.geminiMaxOutputTokens === "number" && Number.isFinite(runtime2.config.geminiMaxOutputTokens) ? Math.max(128, Math.floor(runtime2.config.geminiMaxOutputTokens)) : 700;
-  const rawGemini = httpClient.sendRequest(runtime2, askGemini, consensusIdenticalAggregation())({
-    url: geminiUrl,
-    prompt,
-    temperature: geminiTemperature,
-    maxOutputTokens: geminiMaxOutputTokens
-  }).result();
-  const parsedGemini = JSON.parse(stripCodeFences(rawGemini));
+  let parsedGemini;
+  let geminiError;
+  try {
+    const rawGemini = httpClient.sendRequest(runtime2, askGemini, consensusIdenticalAggregation())({
+      url: geminiUrl,
+      prompt,
+      temperature: geminiTemperature,
+      maxOutputTokens: geminiMaxOutputTokens
+    }).result();
+    parsedGemini = JSON.parse(stripCodeFences(rawGemini));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime2.log(`[Gemini fallback] ${message}`);
+    geminiError = message;
+    parsedGemini = {
+      action: "none",
+      strategy: "Gemini unavailable",
+      confidence: 0,
+      rationale: `Gemini request failed (${message}). Execution skipped.`,
+      riskControls: ["Retry later", "Respect rate limits", "No forced execution without model signal"]
+    };
+  }
   const confidence = Math.max(0, Math.min(100, asNumber(parsedGemini.confidence)));
   const modelAction = parseGmxActionFromModel(parsedGemini.action);
   const actionResolution = resolveSwitcherAction(options.forcedTradingAction, modelAction, parsedGemini.strategy || "", parsedGemini.rationale || "");
@@ -16352,18 +16381,18 @@ var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApi
   } else {
     runtime2.log(`[POSITION switcher] source=${actionResolution.source} modelAction=${modelAction ?? "n/a"} resolvedAction=${action}`);
   }
-  const shouldExecuteGmx = chain.recommendationTarget === "gmx" && action !== "none" && confidence >= options.minConfidence && (chain.gmxExecutorAddress || "").length > 0;
-  const shouldExecutePosition = chain.recommendationTarget === "aave-uniswap" && action !== "none" && action !== "close" && confidence >= options.minConfidence && (chain.strategyExecutorAddress || "").length > 0;
+  const shouldExecuteGmx = !geminiError && chain.recommendationTarget === "gmx" && action !== "none" && confidence >= options.minConfidence && (chain.gmxExecutorAddress || "").length > 0;
+  const shouldExecutePosition = !geminiError && chain.recommendationTarget === "aave-uniswap" && action !== "none" && confidence >= options.minConfidence && (chain.strategyExecutorAddress || "").length > 0;
   const gmxIntent = chain.recommendationTarget === "gmx" && action !== "none" ? buildGmxIntentPayload(action, summary, confidence, runtime2.config.gmxIntent, chain.gmxIntent) : undefined;
   const gmxExecutionResult = shouldExecuteGmx && gmxIntent ? tryExecuteGmxIntent(runtime2, chain.gmxExecutorAddress || "", action, gmxIntent) : {
     txHash: "",
     status: "failed",
-    detail: chain.recommendationTarget !== "gmx" ? "Not a GMX target" : action === "none" ? "No GMX action resolved" : confidence < options.minConfidence ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}` : "Missing GMX receiver address"
+    detail: geminiError ? `Gemini unavailable: ${geminiError}` : chain.recommendationTarget !== "gmx" ? "Not a GMX target" : action === "none" ? "No GMX action resolved" : confidence < options.minConfidence ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}` : "Missing GMX receiver address"
   };
   const positionExecutionResult = shouldExecutePosition ? tryExecutePositionIntent(runtime2, chain.strategyExecutorAddress || "", action, chain) : {
     txHash: "",
     status: "failed",
-    detail: chain.recommendationTarget !== "aave-uniswap" ? "Not a position target" : action === "close" ? "Close action not implemented for position flow" : action === "none" ? "No position action resolved" : confidence < options.minConfidence ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}` : "Missing StrategyExecutor address"
+    detail: geminiError ? `Gemini unavailable: ${geminiError}` : chain.recommendationTarget !== "aave-uniswap" ? "Not a position target" : action === "none" ? "No position action resolved" : confidence < options.minConfidence ? `Confidence ${confidence.toFixed(2)} below threshold ${options.minConfidence.toFixed(2)}` : "Missing StrategyExecutor address"
   };
   const shouldExecute = chain.recommendationTarget === "gmx" ? shouldExecuteGmx : shouldExecutePosition;
   const executionResult = chain.recommendationTarget === "gmx" ? gmxExecutionResult : positionExecutionResult;
@@ -16431,10 +16460,10 @@ var parseTradingAction = (value2) => {
   if (value2 === undefined) {
     return "auto";
   }
-  if (value2 === "auto" || value2 === "long" || value2 === "short" || value2 === "close") {
+  if (value2 === "auto" || value2 === "long" || value2 === "short") {
     return value2;
   }
-  throw new Error("Invalid trading action. Allowed values: auto | long | short | close");
+  throw new Error("Invalid trading action. Allowed values: auto | long | short");
 };
 var resolveHttpReason = (payload, defaultReason) => {
   let reason = defaultReason;

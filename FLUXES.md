@@ -27,7 +27,7 @@ make help  # Shows all targets
 
 ---
 
-## 📍 POSITION STRATEGY (AAVE + SUSHI)
+## 📍 POSITION STRATEGY (AAVE + UNISWAP)
 
 ### Full Flow (Recommended)
 ```bash

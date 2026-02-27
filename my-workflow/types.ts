@@ -1,8 +1,17 @@
-export type TradingAction = "auto" | "long" | "short" | "close";
+export type TradingAction = "auto" | "long" | "short";
 
 export type FlowMode = "all" | "position" | "trading";
 
 export type OhlcPoint = [number, number, number, number, number];
+
+export type OhlcSummary = {
+  candles: number;
+  firstOpen: number;
+  lastClose: number;
+  pctChange: number;
+  periodHigh: number;
+  periodLow: number;
+};
 
 export type GmxIntentConfig = {
   collateralToken?: string;
@@ -10,6 +19,28 @@ export type GmxIntentConfig = {
   collateralAmountUsd?: string;
   sizeUsd?: string;
   slippageBps?: number;
+};
+
+export type GmxAction = "long" | "short";
+
+export type ActionResolutionSource = "forced" | "model-action" | "model-text" | "fallback";
+
+export type GmxIntentPayload = {
+  collateralToken: `0x${string}`;
+  market: `0x${string}`;
+  collateralAmountUsd: bigint;
+  sizeUsd: bigint;
+  triggerPrice: bigint;
+  acceptablePrice: bigint;
+};
+
+export type StrategyAction = {
+  tokenIn: `0x${string}`;
+  tokenOut: `0x${string}`;
+  amountIn: bigint;
+  minOut: bigint;
+  dexId: number;
+  fee: number;
 };
 
 export type ChainConfig = {
@@ -71,21 +102,14 @@ export type Recommendation = {
     gmxExecutorAddress: string;
   };
   gmx: {
-    action: "none" | "long" | "short" | "close";
+    action: "none" | "long" | "short";
     shouldExecute: boolean;
     confidenceThreshold: number;
     txHash: string;
     status: "skipped" | "success" | "failed";
     detail: string;
   };
-  ohlcSummary: {
-    candles: number;
-    firstOpen: number;
-    lastClose: number;
-    pctChange: number;
-    periodHigh: number;
-    periodLow: number;
-  };
+  ohlcSummary: OhlcSummary;
 };
 
 export type StrategyRunOptions = {
