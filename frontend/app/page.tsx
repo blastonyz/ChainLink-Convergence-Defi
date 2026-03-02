@@ -1,19 +1,23 @@
-import PriceComparison from '@/components/PriceComparison';
+import { Navbar } from "@/components/ui/landing/navbar";
+import { Hero } from "@/components/ui/landing/hero";
+import { Stats } from "@/components/ui/landing/stats";
+import { Features } from "@/components/ui/landing/features";
+import { MarketOhlcPanel } from "@/components/ui/charts/market-ohlc-panel";
+import { Tokenomics } from "@/components/ui/landing/tokenomics";
+import { Roadmap } from "@/components/ui/landing/roadmap";
+import { CtaFooter } from "@/components/ui/landing/cta-footer";
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-10 font-sans dark:bg-black">
-      <main className="flex w-full max-w-3xl flex-col gap-6">
-        <header className="space-y-2">
-          <h1 className="text-3xl font-semibold text-zinc-900 dark:text-zinc-100">
-            DeFi Price Integrator
-          </h1>
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Compare spot prices from CoinGecko and Bitget through internal API routes.
-          </p>
-        </header>
-        <PriceComparison />
-      </main>
-    </div>
+    <main className="min-h-screen bg-darker-bg">
+      <Navbar />
+      <Hero />
+      <Stats />
+      <Features />
+      <MarketOhlcPanel />
+      <Tokenomics />
+      <Roadmap />
+      <CtaFooter />
+    </main>
   );
 }

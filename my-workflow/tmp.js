@@ -16396,10 +16396,24 @@ var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApi
   };
   const shouldExecute = chain.recommendationTarget === "gmx" ? shouldExecuteGmx : shouldExecutePosition;
   const executionResult = chain.recommendationTarget === "gmx" ? gmxExecutionResult : positionExecutionResult;
+  const generatedAt = runtime2.now().toISOString();
+  const marketPrice = summary.lastClose;
+  const operationLog = {
+    side: action,
+    marketPrice,
+    confidence,
+    chain: chain.chain,
+    coinId: chain.coingeckoCoinId,
+    txHash: executionResult.txHash,
+    status: shouldExecute ? executionResult.status : "skipped",
+    generatedAt
+  };
+  runtime2.log(`[OPERATION_LOG] ${JSON.stringify(operationLog)}`);
   return {
     chain: chain.chain,
     target: chain.recommendationTarget,
     coinId: chain.coingeckoCoinId,
+    marketPrice,
     strategy: parsedGemini.strategy || "hold",
     confidence,
     rationale: parsedGemini.rationale || "No rationale provided",
@@ -16416,6 +16430,7 @@ var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApi
       status: shouldExecute ? executionResult.status : "skipped",
       detail: executionResult.detail
     },
+    operationLog,
     ohlcSummary: summary
   };
 };

@@ -93,6 +93,7 @@ export type Recommendation = {
   chain: "mainnet" | "arbitrum";
   target: "gmx" | "aave-uniswap";
   coinId: string;
+  marketPrice: number;
   strategy: string;
   confidence: number;
   rationale: string;
@@ -108,6 +109,16 @@ export type Recommendation = {
     txHash: string;
     status: "skipped" | "success" | "failed";
     detail: string;
+  };
+  operationLog: {
+    side: "long" | "short" | "none";
+    marketPrice: number;
+    confidence: number;
+    chain: "mainnet" | "arbitrum";
+    coinId: string;
+    txHash: string;
+    status: "skipped" | "success" | "failed";
+    generatedAt: string;
   };
   ohlcSummary: OhlcSummary;
 };
