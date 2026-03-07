@@ -1,6 +1,6 @@
 "use client"
 
-import { Layers, Rocket, Globe, Network } from "lucide-react"
+import { ShieldCheck, Wallet, Network, Cpu } from "lucide-react"
 
 const milestones = [
   {
@@ -8,31 +8,31 @@ const milestones = [
     title: "System Foundation",
     description:
       "Smart contracts, core AI modules, audits, and the initial community go-live.",
-    icon: Layers,
+    icon: ShieldCheck,
     color: "cyan",
   },
   {
     quarter: "Q2 2025",
-    title: "Public Launch",
+    title: "ERC 4337 Integration",
     description:
-      "Public token launch, DEX listings, first staking release, and early partnerships.",
-    icon: Rocket,
+      "Multiple seamless transactions and permissions to eliminate friction through account abstraction with ERC-4337",
+    icon: Wallet,
     color: "purple",
   },
   {
     quarter: "Q3 2025",
     title: "Ecosystem Growth",
     description:
-      "CEX listings, mobile wallet rollout, cross-chain support, and governance v1.",
-    icon: Globe,
+      "Integration of multiple DEXs and multiple chains to increase interoperability and possibilities",
+    icon: Network,
     color: "cyan",
   },
   {
     quarter: "Q4 2025",
     title: "Network Expansion",
     description:
-      "NFT integration, new DeFi partnerships, layer-2 scaling, and global outreach.",
-    icon: Network,
+      "Agent Orchestration, Better Infrastructure to Optimize Profits",
+    icon: Cpu,
     color: "purple",
   },
 ]

@@ -21,10 +21,21 @@ const resolveHttpReason = (payload: HTTPPayload, defaultReason: string): string 
 };
 
 const onHttpPositionTrigger = (runtime: Runtime<Config>, payload: HTTPPayload): FlowResult => {
+  let parsed: HttpPositionTriggerRequest = {};
+
+  if (payload.input && payload.input.length > 0) {
+    parsed = decodeJson(payload.input) as HttpPositionTriggerRequest;
+  }
+
   const reason = resolveHttpReason(payload, "http-position");
+  const forcedTradingAction = parseTradingAction(parsed.action);
+  const minConfidence = parseMinConfidence(parsed.minConfidence, runtime.config.defaultTradingMinConfidence ?? 60);
+
+  runtime.log(`[HTTP position] action=${forcedTradingAction} minConfidence=${minConfidence}`);
+
   return runStrategyFlow(runtime, reason, "position", {
-    forcedTradingAction: "auto",
-    minConfidence: runtime.config.defaultTradingMinConfidence ?? 60,
+    forcedTradingAction,
+    minConfidence,
   });
 };
 

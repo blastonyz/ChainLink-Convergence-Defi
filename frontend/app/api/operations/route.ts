@@ -6,6 +6,7 @@ type Side = "long" | "short";
 
 type OperationInput = {
   side: Side;
+  owner?: string;
   timestamp: number;
   price: number;
   stopPrice?: number;
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
 
     const operation: OperationInput & { createdAt: string } = {
       side: body.side,
+      owner: body.owner?.trim() || undefined,
       timestamp,
       price,
       stopPrice,

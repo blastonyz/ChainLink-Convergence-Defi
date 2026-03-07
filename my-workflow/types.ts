@@ -81,6 +81,8 @@ export type Config = {
 
 export type HttpPositionTriggerRequest = {
   reason?: string;
+  action?: TradingAction;
+  minConfidence?: number;
 };
 
 export type HttpTradingTriggerRequest = {

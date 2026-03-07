@@ -1,7 +1,116 @@
+## Frontend CRE Stream 
+
+`frontend/app/api/cre/stream/route.ts` starts `cre workflow simulate` from a frontend `GET /api/cre/stream` request and streams execution logs live to the UI via SSE.
+
+Flow summary:
+- Spawns a child process (`cre ...`) from the project root.
+- Streams `stdout`/`stderr` as SSE events (`start`, `log`, `operation`, `error`, `done`).
+- Auto-answers interactive CLI prompts through `stdin` (`triggerChoice`, `httpPayload`).
+- Parses `[OPERATION_LOG]` lines into structured `operation` events.
+- Sends a final `done` event with exit status.
+
+---
+
+## 🧠 CRE Workflow Architecture (Detailed)
+
+### End-to-End Flow
+
+1. **HTTP trigger enters CRE**
+   - Request is signed and validated against authorized public keys.
+   - Entry handlers:
+     - `position` route (Aave/Uniswap flow)
+     - `trading` route (GMX flow)
+
+2. **Runtime options are resolved**
+   - `reason` is extracted from request payload (or defaulted).
+   - `action` and `minConfidence` are validated/normalized.
+
+3. **Market data is fetched (CoinGecko OHLC)**
+   - CRE HTTP capability fetches OHLC data.
+   - Data is summarized (trend/variation/high-low) for model context.
+
+4. **Prompt is built and Gemini is called**
+   - Prompt includes target route, coin, network, forced action rules, and recent candles.
+   - Model response is parsed as strict JSON.
+
+5. **Action resolution and risk gating**
+   - Final action comes from: forced action > model action > text fallback.
+   - Execution only proceeds if confidence threshold and receiver address checks pass.
+
+6. **Intent encoding + onchain writeReport**
+   - For GMX: payload is encoded with GMX action schema and submitted to `GMXExecutor`.
+   - For Position: payload is encoded with position schema and submitted to `StrategyExecutor`.
+   - Report signature/hashing is performed by CRE before `writeReport`.
+
+7. **Structured result output**
+   - Workflow returns recommendation + execution status + tx hash (if available).
+
+### Architecture by File (Concrete Responsibilities)
+
+#### Entry / Orchestration
+- **`my-workflow/main.ts`**
+  - Bootstraps CRE runner and starts workflow handlers.
+- **`my-workflow/httpTriggers.ts`**
+  - Defines HTTP triggers, key authorization, payload parsing, and mode dispatch (`position` / `trading`).
+- **`my-workflow/strategyFlow.ts`**
+  - Core orchestration: secrets, OHLC fetch, Gemini call, action resolution, confidence gating, execution routing, final response shaping.
+
+#### Shared Domain Types
+- **`my-workflow/types.ts`**
+  - Central schema for config, request payloads, recommendation output, action enums, and OHLC summary types.
+
+#### Data + Prompt Layer
+- **`my-workflow/shared/data/marketDataClient.ts`**
+  - CoinGecko fetch client, Gemini request client, OHLC summarization.
+- **`my-workflow/shared/prompt/promptBuilder.ts`**
+  - Deterministic prompt composition with route hints and risk/format constraints.
+
+#### Parsing / Normalization Layer
+- **`my-workflow/shared/parsers/valueParsers.ts`**
+  - Primitive converters/validators (`asNumber`, `asAddress`, `parseMinConfidence`, etc.) used across modules.
+
+#### Execution Layer - Trading
+- **`my-workflow/shared/execution/trading/tradingExecutionConfig.ts`**
+  - Prompt-level execution hints for trading route behavior.
+- **`my-workflow/shared/execution/trading/tradingPayloadEncoder.ts`**
+  - ABI payload encoding for GMX intent.
+- **`my-workflow/shared/execution/trading/gmxReportExecution.ts`**
+  - CRE report creation + EVM `writeReport` call for GMX executor.
+- **`my-workflow/shared/execution/trading/executionUtils.ts`**
+  - Tx hash normalization and simulator-safe handling.
+
+#### Execution Layer - Position
+- **`my-workflow/shared/execution/position/positionExecutionConfig.ts`**
+  - Position defaults (tokens, amounts, chain selector).
+- **`my-workflow/shared/execution/position/positionPayloadEncoder.ts`**
+  - ABI payload encoding for position operations.
+- **`my-workflow/shared/execution/position/positionReportExecution.ts`**
+  - CRE report creation + EVM `writeReport` call for strategy executor.
+
+#### Strategy Logic Helpers
+- **`my-workflow/strategyHelpers.ts`**
+  - Action inference from model text, switcher resolution, GMX intent building, and strategy report encoding helpers.
+
+### Configuration Artifacts
+- **`my-workflow/config.staging.json` / `my-workflow/config.production.json`**
+  - Environment-specific runtime config (secrets ids, chains, execution settings, authorized keys).
+- **`my-workflow/workflow.yaml`**
+  - CRE workflow deployment/definition descriptor.
+
+---
+
+## 🔗 Related Files
+- **Makefile**: Definition of all targets
+- **scripts/configure-cre.sh**: Automatic CRE configuration for GMX
+- **src/strategy/**: Smart contracts
+- **script/**: Forge scripts for execution
+
+---
+
 # 🎯 Execution Flows - Convergence
 
 ## Overview
-This Makefile organizes two main execution flows:
+The Makefile organizes two main execution flows:
 - **Position Strategy**: Leveraged trading AAVE + Sushi/Uniswap
 - **GMX Trading**: Direct trading on GMX v2
 
@@ -24,7 +133,6 @@ echo $ARB_RPC_URL
 ```bash
 make help  # Shows all targets
 ```
-
 ---
 
 ## 📍 POSITION STRATEGY (AAVE + UNISWAP)
@@ -141,7 +249,7 @@ make query-gmx-order-details GMX_ORDER_KEY=<key>
 ## ⚠️ Important Notes
 
 ### 1. Default Addresses
-- **Position Strategy**: `0x194479f02940FEEfa34e5931d24992E89726c051`
+- **Position Strategy**: `0x1d315D963d7462F2931dF237B54736F90eE67faA`
 - **GMX Executor**: `0x2157b12B8841B22A64aF4d049F2914829C8Fdc79`
 - Customizable via variables
 
@@ -189,7 +297,6 @@ make query-gmx-orders
 
 ## 📋 Execution Checklist
 
-For a judge evaluating the strategy:
 
 ```
 POSITION STRATEGY
@@ -211,98 +318,29 @@ GMX TRADING
 
 ---
 
-## 🧠 CRE Workflow Architecture (Detailed)
+## 📦 Contract Overview
 
-### End-to-End Flow
+### `src/strategy/StrategyExecutor.sol`
+- Main executor for the AAVE + Uniswap/Sushi position flow.
+- Supports direct/manual execution through `execute(...)`.
+- Supports CRE callback execution through `onReport(...)`.
+- Stores CRE security/config values (`creForwarder`, `creWorkflowId`, `creWorkflowOwner`) and validates sender on report reception.
 
-1. **HTTP trigger enters CRE**
-   - Request is signed and validated against authorized public keys.
-   - Entry handlers:
-     - `position` route (Aave/Uniswap flow)
-     - `trading` route (GMX flow)
+### `src/strategy/GMXExecutor.sol`
+- Dedicated executor for GMX v2 trading operations (long, short, close).
+- Supports manual order creation (`createLongOrder`, `createShortOrder`, `createCloseOrder`).
+- Supports CRE callback execution through `onReport(...)`, decoding report payload and creating the corresponding GMX order.
+- Uses `CreOrderConfig` for execution-level parameters (vault, execution fee, callback config, referral code, etc.).
 
-2. **Runtime options are resolved**
-   - `reason` is extracted from request payload (or defaulted).
-   - `action` and `minConfidence` are validated/normalized.
+### `src/strategy/interfaces/IReceiver.sol`
+- Minimal callback interface used by CRE receiver contracts.
+- Standard entrypoint: `onReport(bytes metadata, bytes report)`.
 
-3. **Market data is fetched (CoinGecko OHLC)**
-   - CRE HTTP capability fetches OHLC data.
-   - Data is summarized (trend/variation/high-low) for model context.
+### Related Base Modules
+- `UniswapBase`, `SushiBase`, `AaveBase`, `ArbitrageCase` provide reusable DeFi primitives used by `StrategyExecutor`.
+- GMX-specific interfaces (`IGMXExecutor`, `IGMXExchangeRouter`) encapsulate GMX request/route structures used by `GMXExecutor`.
 
-4. **Prompt is built and Gemini is called**
-   - Prompt includes target route, coin, network, forced action rules, and recent candles.
-   - Model response is parsed as strict JSON.
 
-5. **Action resolution and risk gating**
-   - Final action comes from: forced action > model action > text fallback.
-   - Execution only proceeds if confidence threshold and receiver address checks pass.
 
-6. **Intent encoding + onchain writeReport**
-   - For GMX: payload is encoded with GMX action schema and submitted to `GMXExecutor`.
-   - For Position: payload is encoded with position schema and submitted to `StrategyExecutor`.
-   - Report signature/hashing is performed by CRE before `writeReport`.
-
-7. **Structured result output**
-   - Workflow returns recommendation + execution status + tx hash (if available).
-
-### Architecture by File (Concrete Responsibilities)
-
-#### Entry / Orchestration
-- **`my-workflow/main.ts`**
-  - Bootstraps CRE runner and starts workflow handlers.
-- **`my-workflow/httpTriggers.ts`**
-  - Defines HTTP triggers, key authorization, payload parsing, and mode dispatch (`position` / `trading`).
-- **`my-workflow/strategyFlow.ts`**
-  - Core orchestration: secrets, OHLC fetch, Gemini call, action resolution, confidence gating, execution routing, final response shaping.
-
-#### Shared Domain Types
-- **`my-workflow/types.ts`**
-  - Central schema for config, request payloads, recommendation output, action enums, and OHLC summary types.
-
-#### Data + Prompt Layer
-- **`my-workflow/shared/data/marketDataClient.ts`**
-  - CoinGecko fetch client, Gemini request client, OHLC summarization.
-- **`my-workflow/shared/prompt/promptBuilder.ts`**
-  - Deterministic prompt composition with route hints and risk/format constraints.
-
-#### Parsing / Normalization Layer
-- **`my-workflow/shared/parsers/valueParsers.ts`**
-  - Primitive converters/validators (`asNumber`, `asAddress`, `parseMinConfidence`, etc.) used across modules.
-
-#### Execution Layer - Trading
-- **`my-workflow/shared/execution/trading/tradingExecutionConfig.ts`**
-  - Prompt-level execution hints for trading route behavior.
-- **`my-workflow/shared/execution/trading/tradingPayloadEncoder.ts`**
-  - ABI payload encoding for GMX intent.
-- **`my-workflow/shared/execution/trading/gmxReportExecution.ts`**
-  - CRE report creation + EVM `writeReport` call for GMX executor.
-- **`my-workflow/shared/execution/trading/executionUtils.ts`**
-  - Tx hash normalization and simulator-safe handling.
-
-#### Execution Layer - Position
-- **`my-workflow/shared/execution/position/positionExecutionConfig.ts`**
-  - Position defaults (tokens, amounts, chain selector).
-- **`my-workflow/shared/execution/position/positionPayloadEncoder.ts`**
-  - ABI payload encoding for position operations.
-- **`my-workflow/shared/execution/position/positionReportExecution.ts`**
-  - CRE report creation + EVM `writeReport` call for strategy executor.
-
-#### Strategy Logic Helpers
-- **`my-workflow/strategyHelpers.ts`**
-  - Action inference from model text, switcher resolution, GMX intent building, and strategy report encoding helpers.
-
-### Configuration Artifacts
-- **`my-workflow/config.staging.json` / `my-workflow/config.production.json`**
-  - Environment-specific runtime config (secrets ids, chains, execution settings, authorized keys).
-- **`my-workflow/workflow.yaml`**
-  - CRE workflow deployment/definition descriptor.
-
----
-
-## 🔗 Related Files
-- **Makefile**: Definition of all targets
-- **scripts/configure-cre.sh**: Automatic CRE configuration for GMX
-- **src/strategy/**: Smart contracts
-- **script/**: Forge scripts for execution
 
 

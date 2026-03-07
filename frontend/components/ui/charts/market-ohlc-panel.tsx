@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { UTCTimestamp } from "lightweight-charts";
+import { useAccount } from "wagmi";
 import { LightweightCandles } from "@/components/ui/charts/lightweight-candles";
 
 type OhlcPoint = {
@@ -25,6 +26,7 @@ type OhlcResponse = {
 type Operation = {
   _id?: string;
   side: "long" | "short";
+  owner?: string;
   timestamp: number;
   price: number;
   stopPrice?: number;
@@ -42,7 +44,29 @@ type OperationsResponse = {
   requestedAt: string;
 };
 
+type CreOperationEvent = {
+  side: "long" | "short" | "none";
+  marketPrice: number;
+  confidence: number;
+  chain: "mainnet" | "arbitrum";
+  coinId: string;
+  txHash: string;
+  status: "skipped" | "success" | "failed";
+  generatedAt: string;
+};
+
+function toDatetimeLocalValue(isoDate: string) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const tzOffsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
+}
+
 export function MarketOhlcPanel() {
+  const { address } = useAccount();
   const [mounted, setMounted] = useState(false);
   const [data, setData] = useState<OhlcPoint[]>([]);
   const [operations, setOperations] = useState<Operation[]>([]);
@@ -50,6 +74,10 @@ export function MarketOhlcPanel() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [creRunning, setCreRunning] = useState(false);
+  const [creLogs, setCreLogs] = useState<string[]>([]);
+  const [creTriggerChoice, setCreTriggerChoice] = useState("2");
+  const [crePayloadJson, setCrePayloadJson] = useState("{}");
   const [form, setForm] = useState({
     side: "long" as "long" | "short",
     datetime: "",
@@ -58,7 +86,6 @@ export function MarketOhlcPanel() {
     targetPrice: "",
     sizeUsd: "",
     txHash: "",
-    note: "",
   });
 
   useEffect(() => {
@@ -74,8 +101,8 @@ export function MarketOhlcPanel() {
         setError(null);
 
         const response = await fetch(
-          "/api/prices/coingecko?type=ohlc&id=ethereum&vs_currency=usd&days=7",
-          { cache: "no-store" },
+          "/api/prices/coingecko?type=ohlc&id=ethereum&vs_currency=usd&days=30",
+          { cache: "force-cache" },
         );
 
         if (!response.ok) {
@@ -254,13 +281,13 @@ export function MarketOhlcPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           side: form.side,
+          owner: address || undefined,
           timestamp,
           price,
           stopPrice,
           targetPrice,
           sizeUsd,
           txHash: form.txHash || undefined,
-          note: form.note || undefined,
         }),
       });
 
@@ -307,6 +334,101 @@ export function MarketOhlcPanel() {
     setOperations((prev) => prev.filter((operation) => operation._id !== id));
   }
 
+  function runCreBroadcast() {
+    if (creRunning) {
+      return;
+    }
+
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = JSON.parse(crePayloadJson);
+    } catch {
+      setSubmitError("Invalid CRE payload JSON.");
+      return;
+    }
+
+    setCreRunning(true);
+    setSubmitError(null);
+    setCreLogs([]);
+
+    const normalizedTriggerChoice =
+      creTriggerChoice.trim() === "1" || creTriggerChoice.trim() === "2"
+        ? creTriggerChoice.trim()
+        : "2";
+
+    const params = new URLSearchParams({
+      broadcast: "1",
+      verbose: "0",
+      triggerChoice: normalizedTriggerChoice,
+      httpPayload: JSON.stringify(parsedPayload),
+    });
+
+    const eventSource = new EventSource(`/api/cre/stream?${params.toString()}`);
+
+    const pushLog = (line: string) => {
+      setCreLogs((prev) => [...prev.slice(-499), line]);
+    };
+
+    eventSource.addEventListener("start", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as { command?: string; cwd?: string };
+      pushLog(`Started: ${payload.command ?? "cre workflow simulate"}`);
+      if (payload.cwd) {
+        pushLog(`CWD: ${payload.cwd}`);
+      }
+    });
+
+    eventSource.addEventListener("log", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as { line?: string };
+      if (payload.line) {
+        pushLog(payload.line);
+      }
+    });
+
+    eventSource.addEventListener("operation", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as CreOperationEvent;
+      const side = payload.side === "short" ? "short" : payload.side === "long" ? "long" : null;
+
+      setForm((prev) => ({
+        ...prev,
+        side: side ?? prev.side,
+        datetime: toDatetimeLocalValue(payload.generatedAt),
+        price: Number.isFinite(payload.marketPrice) ? payload.marketPrice.toString() : prev.price,
+        txHash: payload.txHash || "",
+        note: `CRE ${payload.status} · ${payload.chain}/${payload.coinId} · conf ${payload.confidence.toFixed(1)}%`,
+      }));
+
+      pushLog(
+        `OPERATION_LOG: side=${payload.side} marketPrice=${payload.marketPrice} confidence=${payload.confidence.toFixed(2)}${side ? "" : " (side none, form side unchanged)"}`,
+      );
+    });
+
+    eventSource.addEventListener("error", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as { message?: string };
+      if (payload.message) {
+        setSubmitError(payload.message);
+        pushLog(`Error: ${payload.message}`);
+      }
+    });
+
+    eventSource.addEventListener("done", (event) => {
+      const payload = JSON.parse((event as MessageEvent<string>).data) as {
+        success?: boolean;
+        exitCode?: number;
+      };
+      pushLog(`Finished: exitCode=${payload.exitCode ?? -1}`);
+      if (!payload.success) {
+        setSubmitError(`CRE command failed with exit code ${payload.exitCode ?? -1}.`);
+      }
+      setCreRunning(false);
+      eventSource.close();
+    });
+
+    eventSource.onerror = () => {
+      setCreRunning(false);
+      eventSource.close();
+    };
+  }
+
   return (
     <section className="relative bg-darker-bg py-16 lg:py-20">
       <div className="mx-auto max-w-7xl px-6">
@@ -321,15 +443,53 @@ export function MarketOhlcPanel() {
             <p className="mt-1 text-xs text-muted-foreground">
               Stored operations: {operations.length}
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              CRE input config is editable below (trigger + payload JSON)
+            </p>
           </div>
-          {loading ? (
-            <span className="text-xs text-muted-foreground">Loading...</span>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {loading ? (
+              <span className="text-xs text-muted-foreground">Loading...</span>
+            ) : null}
+            <button
+              type="button"
+              onClick={runCreBroadcast}
+              disabled={creRunning}
+              className="rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-xs font-semibold text-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {creRunning ? "Running CRE..." : "Run CRE Broadcast"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4 grid grid-cols-1 gap-3 rounded-2xl border border-border/50 bg-dark-bg p-3 md:grid-cols-2 md:gap-4">
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">CRE Trigger</label>
+            <select
+              value={creTriggerChoice}
+              onChange={(event) => setCreTriggerChoice(event.target.value)}
+              className="w-full rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-sm text-foreground"
+              disabled={creRunning}
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] text-muted-foreground">HTTP Payload JSON</label>
+            <textarea
+              value={crePayloadJson}
+              onChange={(event) => setCrePayloadJson(event.target.value)}
+              className="min-h-20 w-full rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-xs text-foreground"
+              disabled={creRunning}
+            />
+          </div>
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="mb-6 grid gap-3 rounded-2xl border border-border/50 bg-dark-bg p-4 md:grid-cols-6"
+          className="mb-6 grid gap-3 rounded-2xl border border-border/50 bg-dark-bg p-4 md:grid-cols-2"
         >
           {!mounted ? (
             <div className="md:col-span-6 text-sm text-muted-foreground">Initializing operations panel...</div>
@@ -397,21 +557,22 @@ export function MarketOhlcPanel() {
             className="rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-sm text-foreground"
           />
 
+          <input
+            type="text"
+            value={address ?? "Wallet not connected"}
+            readOnly
+            className="rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-sm text-muted-foreground"
+          />
+
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-lg bg-gradient-to-r from-cyan to-purple px-4 py-2 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="rounded-lg bg-gradient-to-r from-cyan to-purple px-4 py-2 text-sm font-semibold text-accent-foreground transition-opacity hover:opacity-90 disabled:opacity-60 md:col-span-2 md:justify-self-center"
           >
             {submitting ? "Saving..." : "Save operation"}
           </button>
 
-          <input
-            type="text"
-            placeholder="Nota (optional)"
-            value={form.note}
-            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
-            className="rounded-lg border border-border/60 bg-darker-bg px-3 py-2 text-sm text-foreground md:col-span-6"
-          />
+          
 
           {submitError ? (
             <p className="text-xs text-destructive-foreground md:col-span-6">{submitError}</p>
@@ -419,6 +580,19 @@ export function MarketOhlcPanel() {
             </>
           )}
         </form>
+
+        {creLogs.length > 0 ? (
+          <div className="mb-6 rounded-2xl border border-border/50 bg-dark-bg p-3">
+            <p className="mb-2 text-xs font-semibold text-foreground">CRE Stream</p>
+            <div className="max-h-80 overflow-auto rounded-lg border border-border/40 bg-darker-bg p-2">
+              {creLogs.map((line, index) => (
+                <p key={`${line}-${index}`} className="text-[11px] text-muted-foreground">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="overflow-hidden rounded-2xl border border-border/50 bg-dark-bg p-3 md:p-4">
           {error ? (
@@ -439,15 +613,21 @@ export function MarketOhlcPanel() {
                 className="w-full"
               />
 
-              <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[260px] flex-col gap-2">
+              <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[calc(100%-24px)] flex-row gap-2 overflow-x-auto pr-2">
                 {operationsWithPnl.slice(-2).reverse().map((operation, index) => {
                   const pnlPct = operation.pnlPct ?? 0;
                   const pnlUsd = operation.pnlUsd ?? 0;
+                  const rewardLabel =
+                    operation.rewardPct != null
+                      ? `${operation.rewardPct.toFixed(2)}%`
+                      : operation.pnlPct != null
+                        ? `${operation.pnlPct >= 0 ? "+" : ""}${operation.pnlPct.toFixed(2)}%`
+                        : "-";
 
                   return (
                     <div
                       key={`position-box-${operation.timestamp}-${index}`}
-                      className="overflow-hidden rounded-md border border-border/60 bg-darker-bg/85 text-[10px] backdrop-blur-sm"
+                      className="min-w-[240px] overflow-hidden rounded-md border border-border/60 bg-darker-bg/85 text-[10px] backdrop-blur-sm"
                     >
                       <div className="flex items-center justify-between border-b border-border/40 px-2 py-1 text-[10px] text-foreground">
                         <span className={operation.side === "long" ? "text-cyan" : "text-purple"}>
@@ -469,7 +649,7 @@ export function MarketOhlcPanel() {
                           Risk {operation.riskPct != null ? `${operation.riskPct.toFixed(2)}%` : "-"}
                         </div>
                         <div className="bg-emerald-500/35 px-2 py-1 text-emerald-100 text-right">
-                          Reward {operation.rewardPct != null ? `${operation.rewardPct.toFixed(2)}%` : "-"}
+                          Reward {rewardLabel}
                         </div>
                       </div>
 
@@ -535,6 +715,9 @@ export function MarketOhlcPanel() {
                 )}
                 {operation.txHash ? (
                   <p className="mt-1 truncate text-xs text-muted-foreground">Tx: {operation.txHash}</p>
+                ) : null}
+                {operation.owner ? (
+                  <p className="mt-1 truncate text-xs text-muted-foreground">Owner: {operation.owner}</p>
                 ) : null}
                 {operation._id ? (
                   <button

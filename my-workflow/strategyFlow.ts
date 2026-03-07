@@ -32,8 +32,8 @@ const recommendForChain = (
   coingeckoApiKey: string,
   geminiApiKey: string,
   options: StrategyRunOptions,
-): Recommendation => {
-  const ohlcUrl = `${runtime.config.coingeckoApiBaseUrl}/coins/${chain.coingeckoCoinId}/ohlc?vs_currency=${runtime.config.coingeckoVsCurrency}&days=${runtime.config.ohlcDays}`;
+): Recommendation => {                                                                                    //${runtime.config.coingeckoVsCurrency}&days=${runtime.config.ohlcDays}
+  const ohlcUrl = `${runtime.config.coingeckoApiBaseUrl}/coins/${chain.coingeckoCoinId}/ohlc?vs_currency=${runtime.config.coingeckoVsCurrency}&days=30`;
   const coingeckoApiKeyHeader = runtime.config.coingeckoApiKeyHeader || "x-cg-pro-api-key";
 
   const serializedOhlc = httpClient

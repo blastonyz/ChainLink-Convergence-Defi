@@ -1,6 +1,6 @@
 "use client"
 
-import { Shield, Zap, Users, Cpu, BarChart3, RefreshCw } from "lucide-react"
+import { Shield, Network, Users, Cpu, BarChart3, GitBranch } from "lucide-react"
 
 const features = [
   {
@@ -12,10 +12,10 @@ const features = [
   },
   {
     number: "02",
-    title: "Lightning Fast",
+    title: "Protocol's Integration",
     description:
-      "AI-routing optimizes network congestion for instant transactions, enabling sub-second settlement across chains.",
-    icon: Zap,
+      "Seamless flows between different protocols, facilitating operation and user experience",
+    icon: Network,
   },
   {
     number: "03",
@@ -35,8 +35,8 @@ const features = [
     number: "05",
     title: "Fork Simulation",
     description:
-      "Test any strategy on a full Ethereum fork before risking real assets. Replay, adjust, and optimize with zero cost.",
-    icon: RefreshCw,
+      "Test any strategy on a full Arbitrum fork before risking real assets. Replay, adjust, and optimize with zero cost.",
+    icon: GitBranch,
   },
   {
     number: "06",

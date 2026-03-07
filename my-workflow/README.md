@@ -1,3 +1,12 @@
+# Simulates without executing transactions
+cre workflow simulate ./my-workflow -T staging-settings -e .env 
+
+# Simulates AND executes transactions on-chain
+cre workflow simulate ./my-workflow -T staging-settings -e .env --broadcast
+```
+
+### Key Difference
+
 # CRE Multi-Chain Strategy Workflow
 
 This workflow does the following in one CRE flow:
@@ -52,10 +61,10 @@ make workflow-simulate-broadcast
 Or run directly:
 ```bash
 # Simulates without executing transactions
-cre workflow simulate ./my-workflow -T staging-settings -e .env -v
+cre workflow simulate ./my-workflow -T staging-settings -e .env 
 
 # Simulates AND executes transactions on-chain
-cre workflow simulate ./my-workflow -T staging-settings -e .env -v --broadcast
+cre workflow simulate ./my-workflow -T staging-settings -e .env --broadcast
 ```
 
 ### Key Difference
@@ -74,7 +83,9 @@ When using the `position` trigger, you can send:
 
 ```json
 {
-  "reason": "manual-check-before-open"
+  "reason": "manual-check-before-open",
+  "action": "long",
+  "minConfidence": 0
 }
 ```
 
@@ -88,7 +99,7 @@ When using the `trading` trigger, you can send:
 }
 ```
 
-`action` is strictly validated and must be one of: `auto | long | short | close`.
+`action` is strictly validated and must be one of: `auto | long | short`.
 
 ## Execution toggle
 

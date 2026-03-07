@@ -16334,7 +16334,7 @@ var tryExecutePositionIntent = (runtime2, receiver, action, _chain) => {
   }
 };
 var recommendForChain = (runtime2, httpClient, chain, coingeckoApiKey, geminiApiKey, options) => {
-  const ohlcUrl = `${runtime2.config.coingeckoApiBaseUrl}/coins/${chain.coingeckoCoinId}/ohlc?vs_currency=${runtime2.config.coingeckoVsCurrency}&days=${runtime2.config.ohlcDays}`;
+  const ohlcUrl = `${runtime2.config.coingeckoApiBaseUrl}/coins/${chain.coingeckoCoinId}/ohlc?vs_currency=${runtime2.config.coingeckoVsCurrency}&days=30`;
   const coingeckoApiKeyHeader = runtime2.config.coingeckoApiKeyHeader || "x-cg-pro-api-key";
   const serializedOhlc = httpClient.sendRequest(runtime2, fetchOhlc, consensusIdenticalAggregation())({
     url: ohlcUrl,
@@ -16491,10 +16491,17 @@ var resolveHttpReason = (payload, defaultReason) => {
   return reason;
 };
 var onHttpPositionTrigger = (runtime2, payload) => {
+  let parsed = {};
+  if (payload.input && payload.input.length > 0) {
+    parsed = decodeJson(payload.input);
+  }
   const reason = resolveHttpReason(payload, "http-position");
+  const forcedTradingAction = parseTradingAction(parsed.action);
+  const minConfidence = parseMinConfidence(parsed.minConfidence, runtime2.config.defaultTradingMinConfidence ?? 60);
+  runtime2.log(`[HTTP position] action=${forcedTradingAction} minConfidence=${minConfidence}`);
   return runStrategyFlow(runtime2, reason, "position", {
-    forcedTradingAction: "auto",
-    minConfidence: runtime2.config.defaultTradingMinConfidence ?? 60
+    forcedTradingAction,
+    minConfidence
   });
 };
 var onHttpTradingTrigger = (runtime2, payload) => {
