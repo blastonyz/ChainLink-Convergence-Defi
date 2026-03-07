@@ -1,3 +1,9 @@
+# Defiance - DeFi + CRE + AI (Gemini)
+
+On-chain AI-assisted trading on an Arbitrum vNet fork.
+
+
+
 ## Frontend CRE Stream 
 
 `frontend/app/api/cre/stream/route.ts` starts `cre workflow simulate` from a frontend `GET /api/cre/stream` request and streams execution logs live to the UI via SSE.
@@ -98,6 +104,23 @@ Flow summary:
   - CRE workflow deployment/definition descriptor.
 
 ---
+
+## 🔗 Pinned Example Transactions (Tenderly)
+
+- **GMX Short Tx**  
+  [View on Tenderly](https://dashboard.tenderly.co/explorer/vnet/ecbbba79-a3a5-42d7-bf6c-e7a7656bb0ae/tx/0x6dfdb8630fd8decbdd720952f0509de9c527ed76353151a8c43e81661aee77d0)
+
+- **AAVE + UNISWAP Short Tx #1**  
+  [View on Tenderly](https://dashboard.tenderly.co/explorer/vnet/ecbbba79-a3a5-42d7-bf6c-e7a7656bb0ae/tx/0x6d4fd62beedbb9d424a3c3b8c1fc6ac40a64101656ef609773827338371e6108)
+
+- **AAVE + UNISWAP Short Tx #2**  
+  [View on Tenderly](https://dashboard.tenderly.co/explorer/vnet/ecbbba79-a3a5-42d7-bf6c-e7a7656bb0ae/tx/0xc9c82a2e4c5d0eb56a7805a5391dea95b88c236218cf5854083c9b8f1740989a)
+
+- **GMX Executor - Contract Creation Tx**  
+  [View on Tenderly](https://dashboard.tenderly.co/explorer/vnet/ecbbba79-a3a5-42d7-bf6c-e7a7656bb0ae/tx/0x46ec469e9ddae03c278dfccde239c8528e5b5f0ab0d2b85e4c734ad481ac9f9d)
+
+- **AAVE + UNISWAP StrategyExecutor - Contract Creation Tx**  
+  [View on Tenderly](https://dashboard.tenderly.co/explorer/vnet/ecbbba79-a3a5-42d7-bf6c-e7a7656bb0ae/tx/0x0d0f7b373f17688bb843570a72d0d5df4e71fb9ff6262c7a7b3cbc3cdcb7dd8b)
 
 ## 🔗 Related Files
 - **Makefile**: Definition of all targets
